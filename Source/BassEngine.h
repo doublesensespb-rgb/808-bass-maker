@@ -2,7 +2,7 @@
 //
 // Built on the principle of Thematic's Serum 808 patch:
 //   sine (OCT -2) + three pitch envelopes of different speed (fast CLICK, 1/4-ish PUNCH, slow DROP over the tail)
-//   + linear volume tail (LENGTH) + short noise transient + ASYM distortion whose drive falls with the tail
+//   + linear volume tail (LENGTH) + NOISE into the drive + odd-harmonic FM + ASYM distortion whose drive falls with the tail
 //   + EQ high cut. POWER is a macro: more drive, more sub, more punch, harder output clipper.
 // The sub (below ~90 Hz) is kept as a clean mono sine, the dirt lives above it, so the low end never collapses.
 // Everything runs at 4x oversampling and is decimated with two half-band FIR stages.
@@ -26,9 +26,25 @@ struct Params
     float power  = 0.65f;   // macro (0..1)
     float length = 0.70f;   // tail length (0..1)
     float drive  = 0.40f;   // asym distortion (0..1)
-    float glide  = 0.35f;   // portamento for overlapping notes (0..1)
+    float glide  = 0.0f;    // legacy (GLIDE knob removed in 0.11): kept at 0
     float output = 0.0f;    // output gain, dB
+    float fm     = 0.0f;    // odd-harmonic FM squeak in the low-mids (0..1)
+    float noise  = 0.0f;    // noise into the drive (0..1)
+    float noiseTone = 0.55f; // dark .. bright
+    float noiseTail = 0.35f; // only the attack .. the whole tail
+    int   noiseType = 0;     // see noiseNames()
 };
+
+inline const char* const* noiseNames()
+{
+    static const char* const n[] = { "WHITE", "PINK", "BROWN", "VINYL", "TAPE", "HUM", "DIRT", "DUST" };
+    return n;
+}
+constexpr int kNumNoises = 8;
+
+// FM squeak: carrier phase th, modulator at 2x -> only odd harmonics (1, 3, 5, 7 ...)
+inline double fmIndex (const Params& p, double amp) { return (0.5 + 3.3 * p.fm) * (0.45 + 0.55 * amp); }
+inline double fmPart (double th, double index) { return std::sin (th + index * std::sin (2.0 * th)) - std::sin (th); }
 
 // ---- parameter mapping (shared by the DSP and the screen, so the picture matches the sound) ----
 inline double clickSemis (const Params& p) { return p.click * 36.0; }
@@ -80,7 +96,7 @@ inline void previewShape (const Params& p, double seconds, int n, float* wave, f
         ph += 2.0 * kPi * f * dt;
         const double a = ampShape (p, t);
         const double g = driveGain (p) * (0.55 + 0.45 * a);
-        const double s = std::sin (ph);
+        const double s = std::sin (ph) + 0.45 * p.fm * fmPart (ph, fmIndex (p, a));
         const double d = s + driveMix (p) * (asym (s, g) - s) * 0.6;   // the picture keeps the sine readable
         wave[i] = (float) (d * a);
         env[i] = (float) a;
@@ -151,6 +167,60 @@ struct Decimator2
     void reset() { buf.fill (0); pos = 0; }
 };
 
+
+// Built-in noises (generated, no files). Each one is roughly -9 dB RMS.
+struct NoiseGen
+{
+    uint32_t rng = 0x9e3779b9u;
+    double b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, brown = 0;
+    double crack = 0, crackEnv = 0, held = 0, holdCount = 0, humPh = 0, wob = 0, hissLp = 0, hissHp = 0;
+    double white()
+    {
+        rng = rng * 1664525u + 1013904223u;
+        return (rng >> 8) * (1.0 / 8388608.0) - 1.0;
+    }
+    double next (int type, double osr)
+    {
+        const double w = white();
+        switch (type)
+        {
+            default:
+            case 0: return w * 0.6;
+            case 1:   // pink (Paul Kellet)
+                b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.96900 * b2 + w * 0.1538520;
+                b3 = 0.86650 * b3 + w * 0.3104856; b4 = 0.55000 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.0168980;
+                { const double pk = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362; b6 = w * 0.115926; return pk * 0.12; }
+            case 2:   // brown: deep rumble
+                brown = (brown + 0.02 * w) / 1.0015;
+                return std::fmax (-1.0, std::fmin (1.0, brown * 2.2));
+            case 3:   // vinyl: soft bed + crackles
+                if (white() > 1.0 - 2.0 * 45.0 / osr) { crack = white() > 0 ? 1.0 : -1.0; crackEnv = 0.5 + 0.5 * std::fabs (white()); }
+                crackEnv *= std::exp (-1.0 / (0.0007 * osr));
+                hissLp += (w - hissLp) * 0.08;
+                return hissLp * 0.5 + crack * crackEnv * std::fabs (w) * 1.6;
+            case 4:   // tape: band hiss with a slow wobble
+                hissHp += (w - hissHp) * 0.06;
+                hissLp += ((w - hissHp) - hissLp) * 0.35;
+                wob += 0.9 / osr;
+                return hissLp * (0.85 + 0.15 * std::sin (2.0 * kPi * wob)) * 1.4;
+            case 5:   // hum: mains buzz (odd harmonics of 50 Hz) + a little air
+                humPh += 50.0 / osr; humPh -= std::floor (humPh);
+                {
+                    const double th = 2.0 * kPi * humPh;
+                    return 0.42 * std::sin (th) + 0.32 * std::sin (3 * th) + 0.22 * std::sin (5 * th) + 0.14 * std::sin (7 * th)
+                         + 0.09 * std::sin (9 * th) + w * 0.06;
+                }
+            case 6:   // dirt: stepped sample & hold grit
+                if ((holdCount -= 1.0) <= 0) { held = w; holdCount = osr / (2200.0 + 1800.0 * std::fabs (white())); }
+                return held * 0.55;
+            case 7:   // dust: sparse clicks
+                if (white() > 1.0 - 2.0 * 70.0 / osr) { crack = white(); crackEnv = 1.0; }
+                crackEnv *= std::exp (-1.0 / (0.00025 * osr));
+                return crack * crackEnv * 1.8;
+        }
+    }
+};
+
 // ---- the voice / synth ----
 class Engine
 {
@@ -172,14 +242,17 @@ public:
         subLo.setLow (osr, 90.0);
         dirtHi.setHigh (osr, 90.0);
         hiCut.lowpass (osr, 9000.0, 0.6);
-        noiseHp.highpass (osr, 1800.0, 0.7);
+        noiseHp.highpass (osr, 45.0, 0.7);
+        fmHp.highpass (osr, 160.0, 0.7071);
+        fmLp1.lowpass (osr, 1600.0, 0.7071);
+        fmLp2.lowpass (osr, 1600.0, 0.7071);
         dcBlock.highpass (osr, 18.0, 0.7);
         reset();
     }
 
     void reset()
     {
-        subLo.reset(); dirtHi.reset(); hiCut.reset(); noiseHp.reset(); dcBlock.reset();
+        subLo.reset(); dirtHi.reset(); hiCut.reset(); noiseHp.reset(); dcBlock.reset(); fmHp.reset(); fmLp1.reset(); fmLp2.reset(); noiseLp = 0;
         d1.reset(); d2a.reset(); d2b.reset();
         stackSize = 0; gate = false; rel = 0; phase = 0; t = 99; curNote = targetNote = 36;
     }
@@ -229,7 +302,11 @@ public:
         const double subGain = 1.0 + 0.5 * p.power;
         const double clipIn = std::pow (10.0, (p.power * 8.0) / 20.0);
         const double outGain = std::pow (10.0, p.output / 20.0) * 0.82;
-        const double noiseAmt = (0.10 + 0.35 * p.power) * (0.3 + 0.7 * p.click);
+        const double noiseAmt = p.noise * p.noise * 0.55;
+        const double toneHz = 500.0 * std::pow (36.0, (double) p.noiseTone);
+        const double toneK = 1.0 - std::exp (-2.0 * kPi * toneHz / osr);
+        const double fmGain = p.fm * 1.15;
+        const int nType = p.noiseType < 0 ? 0 : (p.noiseType >= kNumNoises ? kNumNoises - 1 : p.noiseType);
 
         for (int i = 0; i < n; ++i)
         {
@@ -245,17 +322,30 @@ public:
                     const double hz = 440.0 * std::pow (2.0, (curNote - 69.0 + bend + pitchShape (p, t)) / 12.0);
                     phase += hz * dtO;
                     phase -= std::floor (phase);
-                    const double s = std::sin (2.0 * kPi * phase) * a;
+                    const double th = 2.0 * kPi * phase;
+                    const double unit = std::sin (th);
+                    const double s = unit * a;
+                    const double shape = ampShape (p, t);
 
-                    // noise transient: fast rise, quick decay, high-passed, goes into the drive with the body
-                    rng = rng * 1664525u + 1013904223u;
-                    const double nz = ((rng >> 8) * (1.0 / 8388608.0) - 1.0);
-                    const double ne = t < 0.0015 ? t / 0.0015 : std::exp (-(t - 0.0015) / 0.014);
-                    const double noise = noiseHp (nz) * ne * noiseAmt * rel * vel;
+                    // NOISE goes INTO the drive with the sine: it gets crushed into crunch instead of hissing on top.
+                    // It breathes with the wave (louder on the crests) and with the tail (Serum: LFO 5 -> Noise).
+                    double noise = 0.0;
+                    if (noiseAmt > 0.0)
+                    {
+                        noiseLp += (gen.next (nType, osr) - noiseLp) * toneK;
+                        const double burst = t < 0.003 ? t / 0.003 : std::exp (-(t - 0.003) / 0.035);
+                        const double env = std::fmax (burst, p.noiseTail * shape) * rel * vel;
+                        noise = noiseHp (noiseLp) * env * (0.3 + 0.7 * std::fabs (unit)) * noiseAmt;
+                    }
+
+                    // FM squeak: odd harmonics only, kept in the low-mids
+                    double fmx = 0.0;
+                    if (fmGain > 0.0)
+                        fmx = fmLp2 (fmLp1 (fmHp (fmPart (th, fmIndex (p, shape))))) * a * fmGain;
 
                     // drive follows the tail (Serum: LFO 1 -> Dist Drive)
-                    const double gNow = gD * (0.5 + 0.5 * ampShape (p, t));
-                    const double x = s + noise;
+                    const double gNow = gD * (0.5 + 0.5 * shape);
+                    const double x = s + noise + fmx;
                     const double dirt = x + mix * (asym (x, gNow) - x);
 
                     // clean sub below 90 Hz + dirt above it
@@ -279,10 +369,18 @@ public:
             out[i] = (float) y;
             if (std::fabs (y) > peak) peak = (float) std::fabs (y);
         }
+        peakAcc = std::fmax (peakAcc, peak);
+        subAcc = std::fmax (subAcc, subPeak);
         vizAmp.store ((float) (ampShape (p, t) * rel));
-        vizLevel.store (peak);
-        vizSub.store (subPeak);
         vizNoteTime.store (t);
+    }
+
+    // call once per host block: hands the block's peaks to the UI
+    void publishViz()
+    {
+        vizLevel.store (peakAcc);
+        vizSub.store (subAcc);
+        peakAcc = subAcc = 0.0f;
     }
 
 private:
@@ -307,7 +405,10 @@ private:
     int stackSize = 0;
     uint32_t rng = 12345;
     LR4 subLo, dirtHi;
-    Biquad hiCut, noiseHp, dcBlock;
+    Biquad hiCut, noiseHp, dcBlock, fmHp, fmLp1, fmLp2;
+    NoiseGen gen;
+    float peakAcc = 0, subAcc = 0;
+    double noiseLp = 0;
     Decimator2 d1, d2a, d2b;
 };
 
@@ -316,12 +417,15 @@ struct Preset { const char* name; Params p; };
 inline const std::vector<Preset>& factoryPresets()
 {
     static const std::vector<Preset> list = {
-        { "THEMATIC 808", { 0.75f, 0.50f, 0.30f, 0.65f, 0.70f, 0.40f, 0.35f, 0.0f } },
-        { "DEEP SLIDE",   { 0.45f, 0.30f, 0.15f, 0.55f, 0.85f, 0.20f, 0.70f, 0.0f } },
-        { "STREET GUT",   { 0.85f, 0.65f, 0.25f, 0.90f, 0.60f, 0.80f, 0.30f, -2.0f } },
-        { "CLEAN SUB",    { 0.30f, 0.20f, 0.10f, 0.35f, 0.75f, 0.00f, 0.40f, 0.0f } },
-        { "TRAP PRESS",   { 0.95f, 0.75f, 0.40f, 0.80f, 0.55f, 0.60f, 0.25f, -1.0f } },
-        { "BOOM HALL",    { 0.60f, 0.45f, 0.55f, 0.70f, 1.00f, 0.35f, 0.50f, 0.0f } },
+        { "THEMATIC 808", { 0.75f, 0.50f, 0.30f, 0.65f, 0.70f, 0.40f, 0.0f, 0.0f,  0.00f, 0.00f, 0.55f, 0.35f, 0 } },
+        { "DEEP SLIDE",   { 0.45f, 0.30f, 0.15f, 0.55f, 0.85f, 0.20f, 0.0f, 0.0f,  0.10f, 0.20f, 0.35f, 0.20f, 2 } },
+        { "STREET GUT",   { 0.85f, 0.65f, 0.25f, 0.90f, 0.60f, 0.80f, 0.0f, -2.0f, 0.25f, 0.45f, 0.55f, 0.60f, 1 } },
+        { "CLEAN SUB",    { 0.30f, 0.20f, 0.10f, 0.35f, 0.75f, 0.00f, 0.0f, 0.0f,  0.00f, 0.00f, 0.55f, 0.35f, 0 } },
+        { "TRAP PRESS",   { 0.95f, 0.75f, 0.40f, 0.80f, 0.55f, 0.60f, 0.0f, -1.0f, 0.15f, 0.30f, 0.70f, 0.25f, 3 } },
+        { "BOOM HALL",    { 0.60f, 0.45f, 0.55f, 0.70f, 1.00f, 0.35f, 0.0f, 0.0f,  0.05f, 0.25f, 0.40f, 0.80f, 4 } },
+        { "SQUEAK",       { 0.70f, 0.45f, 0.20f, 0.70f, 0.70f, 0.45f, 0.0f, -1.0f, 0.65f, 0.15f, 0.50f, 0.30f, 0 } },
+        { "CRUNCH",       { 0.80f, 0.55f, 0.25f, 0.75f, 0.65f, 0.65f, 0.0f, -1.0f, 0.20f, 0.70f, 0.60f, 0.70f, 6 } },
+        { "VINYL KNOCK",  { 0.65f, 0.40f, 0.30f, 0.60f, 0.60f, 0.50f, 0.0f, 0.0f,  0.10f, 0.55f, 0.45f, 0.45f, 3 } },
     };
     return list;
 }

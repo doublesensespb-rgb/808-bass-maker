@@ -1,6 +1,6 @@
 # 808 BASS MAKER (repo: 808-bass-maker) — guide for AI agents and developers
 
-Read this whole file before changing anything. Current version: **0.1** (`project(... VERSION 0.1.0)` in CMakeLists.txt).
+Read this whole file before changing anything. Current version: **0.11** (`project(... VERSION 0.1.1)` in CMakeLists.txt).
 
 ## 1. Product
 
@@ -14,11 +14,15 @@ The sound is built on the principle of the owner's Serum 808 patch:
 sine (OCT -2)
  + 3 pitch envelopes: CLICK (very fast, Serum LFO 4), PUNCH (~1/4, exp, LFO 3), DROP (slow linear over the tail, LFO 2)
  + linear volume tail = LENGTH (Serum LFO 1 -> A Vol, ENV 1 is just a gate: A 0.5 ms, R 15 ms)
- + short high-passed noise transient (Serum LFO 5 -> Noise level)
+ + NOISE (8 built-in types) mixed INTO the drive, breathing with the sine crests and the tail (Serum LFO 5 -> Noise):
+   the drive crushes it into crunch instead of hiss
+ + FM: carrier + modulator at 2x = ODD harmonics only, band-limited to 160-1600 Hz (stylish squeak)
  -> ASYM distortion whose drive falls with the tail (Serum LFO 1 -> Dist Drive)
  -> clean sub below 90 Hz (LR4 split, mono sine) + dirt above it
  -> EQ high cut 9 kHz -> DC block -> output clipper (POWER pushes into it)
-Mono, last-note priority, LEGATO off (envelopes retrigger), GLIDE only on overlapping notes, pitch bend +/-2.
+Mono, last-note priority, LEGATO off (envelopes retrigger), no glide (GLIDE knob removed in 0.11, param kept), pitch bend +/-2.
+3 LFOs exactly like GRAIN FORM: 4-point drawable shapes, drag a tab onto any knob, chips = depth, lamps, REMOVE LINKS,
+SHAPE presets, MODE FREE/RETRIG/ENV (default RETRIG, restarts on every note), DIVISION + SYNC, RATE, RISE. Mod every 32 samples.
 Everything runs at 4x oversampling, decimated by two half-band FIR stages.
 ```
 
@@ -44,8 +48,8 @@ POWER is a macro: more drive, more punch depth, more sub, harder clipper, and on
 | File | What it is |
 |---|---|
 | `Source/BassEngine.h` | Header-only DSP: parameter mapping (`pitchShape`, `ampShape`, `driveGain`...), `Engine` (voice, oversampling, drive, sub split, clipper), viz atomics, factory presets |
-| `Source/PluginProcessor.*` | Parameters, sample-accurate MIDI, presets, DICE ranges (`diceParams`), state save/load |
-| `Source/PluginEditor.*` | UI 900x570: `FlatLook`, `Knob`, `WaveScreen` (wave + air contours + dust bursts that react to the real audio), `Meter`, `BassEditor` |
+| `Source/PluginProcessor.*` | Parameters, MIDI, mod matrix + LFOs (ported from GRAIN FORM), factory + user presets (`Documents/808 BASS MAKER/Presets/*.808preset`), RANDOM ranges (`randomTargets`), state (mods + LFO shapes) |
+| `Source/PluginEditor.*` | UI 900x650: `FlatLook`, `Knob` (+ `ModChip`, LFO drop target), `WaveScreen` (wave + air + dust from the real audio, noise sparks), `Meter`, `PresetBar` (< NAME > SAVE), `NoisePicker`, `LfoTab`, `LfoEditor`, `BassEditor` |
 | `tools/Snapshot.cpp` | Renders the editor to PNG while a note plays (`ui-idle/impact/tail/gut.png`; `frames` mode = animation strip) |
 | `test/engine_test.cpp` | `g++ -std=c++17 -O2 -ISource test/engine_test.cpp -o et && ./et` |
 | `.github/workflows/build.yml` | CI: Windows + macOS, publishes zips + PNGs to the `builds` branch (manual start only) |
@@ -55,7 +59,8 @@ The screen draws the wave from the same mapping functions as the DSP, on a stret
 pitch softened, so CLICK/PUNCH are visible and the sine stays readable. Dust: a burst on every note (`vizHits`),
 60% from the attack point, 40% from all along the wave; continuous air is emitted in proportion to the live output level.
 
-Three dashed `MODULE` slots under the knobs are reserved for future blocks (owner's request).
+Bottom row: NOISE panel (type < >, AMOUNT, TONE, TAIL) and LFO panel. Main row: CLICK PUNCH DROP POWER LENGTH DRIVE FM.
+RANDOM (big orange button, top right) animates every knob to a random but usable 808; LFO links stay.
 
 ## 4. Build pipeline
 
@@ -80,7 +85,10 @@ Xvfb :99 & DISPLAY=:99 ./build/Snapshot_artefacts/Release/Snapshot outdir
 v0.1: first build. Engine from the Serum patch, 7 knobs (CLICK PUNCH DROP POWER LENGTH DRIVE GLIDE), 6 factory presets,
 DICE, wave screen with white air/dust, SUB/OUT meters, click on the screen plays C2.
 
+v0.11: NOISE module (WHITE PINK BROWN VINYL TAPE HUM DIRT DUST) into the drive, FM odd harmonics knob, 3 LFOs from
+GRAIN FORM, preset SAVE + user presets, DICE -> big RANDOM, GLIDE knob removed, 9 factory presets.
+
 ## 7. Ideas not started
 
-Modules for the 3 slots (TRANSIENT type, EQ, LFO, tone SHAPE, drive types TUBE/HARD/FOLD/GUT), user presets SAVE,
+EQ, tone SHAPE, drive types TUBE/HARD/FOLD/GUT,
 tempo-synced LENGTH, resizable UI, installer, notarization, licence keys.

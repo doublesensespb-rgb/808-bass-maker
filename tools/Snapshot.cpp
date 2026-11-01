@@ -54,8 +54,13 @@ int main (int argc, char** argv)
     }
     p.keyboardState.noteOff (1, 36, 0.0f);
 
-    // a heavy preset
-    p.loadPreset (2);
+    // a heavy preset with noise crunch, FM and an LFO on DRIVE and FM
+    p.loadFactory (7);   // CRUNCH
+    p.setModulation (mtDrive, 0, 0.35f);
+    p.setModulation (mtFm, 1, -0.3f);
+    p.setModulation (mtNoiseTone, 0, 0.25f);
+    ed.selectLfo (0);
+    ed.refreshAllMods();
     for (int i = 0; i < 30; ++i) frame (p, ed);
     p.keyboardState.noteOn (1, 33, 1.0f);
     for (int i = 0; i < 9; ++i) frame (p, ed);
