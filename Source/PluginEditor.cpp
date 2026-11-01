@@ -364,8 +364,9 @@ void WaveScreen::burst (float strength)
         }
         dust.push_back (d);
     }
-    rings.push_back ({ 0.0f, power * (0.5f + 0.5f * strength) });
-    if (rings.size() > 6) rings.erase (rings.begin());
+    // soft ripples of air instead of one heavy arc: three thin rings, a few ms apart
+    for (int k = 0; k < 3; ++k) rings.push_back ({ -0.05f * (float) k, power * (0.5f + 0.5f * strength) });
+    if (rings.size() > 9) rings.erase (rings.begin(), rings.begin() + (long) (rings.size() - 9));
     flash = 1.0f;
 }
 
@@ -440,7 +441,7 @@ void WaveScreen::tick (float dt)
     if (dust.size() > 3000) dust.erase (dust.begin(), dust.begin() + (long) (dust.size() - 3000));
 
     for (auto& r : rings) r.t += dt;
-    rings.erase (std::remove_if (rings.begin(), rings.end(), [] (const Ring& r) { return r.t > 1.1f; }), rings.end());
+    rings.erase (std::remove_if (rings.begin(), rings.end(), [] (const Ring& r) { return r.t > 0.7f; }), rings.end());
     flash = jmax (0.0f, flash - dt / 0.18f);
 }
 
@@ -492,12 +493,14 @@ void WaveScreen::paint (Graphics& g)
 
     for (const auto& r : rings)
     {
-        const float rad = 10.0f + r.t * (W * (0.6f + 0.7f * r.power));
-        const float a = jmax (0.0f, 1.0f - r.t / 1.1f);
+        if (r.t < 0.0f) continue;
+        const float k = r.t / 0.7f;                                   // gone in 0.7 s
+        const float rad = 12.0f + std::sqrt (k) * W * (0.55f + 0.5f * r.power);
+        const float a = jmax (0.0f, 1.0f - k);
         Path arc;
-        arc.addCentredArc (xAt (0), m, rad, rad * 0.55f, 0, 0.0f, MathConstants<float>::pi, true);
-        g.setColour (hot.withAlpha (a * a * 0.45f));
-        g.strokePath (arc, PathStrokeType (1.0f + 3.0f * r.power * a));
+        arc.addCentredArc (xAt (0), m, rad, rad * 0.6f, 0, 0.0f, MathConstants<float>::pi, true);
+        g.setColour (hot.withAlpha (a * a * (0.10f + 0.16f * r.power)));
+        g.strokePath (arc, PathStrokeType (0.8f + 0.6f * r.power));
     }
 
     for (const auto& d : dust)
@@ -516,8 +519,8 @@ void WaveScreen::paint (Graphics& g)
 
     if (flash > 0)
     {
-        const float r = 6.0f + 18.0f * power * flash + (1.0f - flash) * 12.0f;
-        g.setColour (hot.brighter (0.3f).withAlpha (flash * 0.6f));
+        const float r = 4.0f + 10.0f * power * flash + (1.0f - flash) * 8.0f;
+        g.setColour (hot.brighter (0.3f).withAlpha (flash * flash * 0.35f));
         g.fillEllipse (xAt (0) - r, m - r, r * 2, r * 2);
     }
 

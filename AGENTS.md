@@ -1,6 +1,6 @@
 # 808 BASS MAKER (repo: 808-bass-maker) — guide for AI agents and developers
 
-Read this whole file before changing anything. Current version: **0.11** (`project(... VERSION 0.1.1)` in CMakeLists.txt).
+Read this whole file before changing anything. Current version: **0.12** (`project(... VERSION 0.1.2)` in CMakeLists.txt).
 
 ## 1. Product
 
@@ -17,7 +17,7 @@ sine (OCT -2)
  + NOISE (8 built-in types) mixed INTO the drive, breathing with the sine crests and the tail (Serum LFO 5 -> Noise):
    the drive crushes it into crunch instead of hiss
  + FM: carrier + modulator at 2x = ODD harmonics only, band-limited to 160-1600 Hz (stylish squeak)
- -> ASYM distortion whose drive falls with the tail (Serum LFO 1 -> Dist Drive)
+ -> drive whose amount falls with the tail (Serum LFO 1 -> Dist Drive); types ASYM (Serum) TUBE HARD FOLD (GRAIN FORM) RECTIFY
  -> clean sub below 90 Hz (LR4 split, mono sine) + dirt above it
  -> EQ high cut 9 kHz -> DC block -> output clipper (POWER pushes into it)
 Mono, last-note priority, LEGATO off (envelopes retrigger), no glide (GLIDE knob removed in 0.11, param kept), pitch bend +/-2.
@@ -37,8 +37,11 @@ POWER is a macro: more drive, more punch depth, more sub, harder clipper, and on
 - Version naming: 0.1, then 0.11, 0.12 ... Deliver files with the version in the name: `808-BASS-MAKER-0.11-Windows.zip`,
   `808-BASS-MAKER-0.11-macOS.zip`. Bump `VERSION` in CMakeLists.txt (0.11 -> 0.1.1) and the "v0.x" text in the editor.
 - Always give links (to builds, tools, sources). He writes Russian, often with typos. Reply in Russian.
-- Design: dark graphite, flat. Knobs: flat dark disc, thin orange value arc, white pointer, NO highlights/3D/gradients.
-  One accent colour: orange `0xfff0541b`. The "air" on the screen is white: the bass BLOWS (like big sound systems), it does not burn.
+- Design (since 0.12): GRAIN FORM style. Graphite bg, rounded panels, quiet grey flat knobs (disc + one light pointer,
+  NO value ring, no highlights/3D), name above, value in a dark box below; light wide spaced title on the left.
+  Accent: copper `0xffd48c5c`. The "air" on the screen is pearl white: the bass BLOWS; DRIVE heats it
+  (pearl -> peach -> copper -> fire, `Colours808::heat`), NOISE AMOUNT mixes in sand grains (`Colours808::sand`).
+  Attack: soft thin air ripples + small flash (owner rejected one heavy arc).
   ALL UI text is English (no Russian in the plugin).
 - **Never change** `PLUGIN_MANUFACTURER_CODE Thmt`, `PLUGIN_CODE B808`, `BUNDLE_ID com.thematic.808bassmaker`, `PRODUCT_NAME`.
 - **Never rename or remove parameter IDs** (`ParamID` in PluginProcessor.h). If a feature goes away, keep the parameter and ignore it.
@@ -87,6 +90,8 @@ DICE, wave screen with white air/dust, SUB/OUT meters, click on the screen plays
 
 v0.11: NOISE module (WHITE PINK BROWN VINYL TAPE HUM DIRT DUST) into the drive, FM odd harmonics knob, 3 LFOs from
 GRAIN FORM, preset SAVE + user presets, DICE -> big RANDOM, GLIDE knob removed, 9 factory presets.
+
+v0.12: GRAIN FORM look, drive types (distType param), heat colour from DRIVE, sand grains from NOISE, soft attack ripples.
 
 ## 7. Ideas not started
 
