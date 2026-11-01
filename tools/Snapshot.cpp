@@ -54,6 +54,15 @@ int main (int argc, char** argv)
     }
     p.keyboardState.noteOff (1, 36, 0.0f);
 
+    // NOISE on: sand wave + sand grains
+    auto setP = [&p] (const char* id, float v) { if (auto* x = p.apvts.getParameter (id)) x->setValueNotifyingHost (x->convertTo0to1 (v)); };
+    setP (ParamID::noise, 0.8f); setP (ParamID::noiseType, 3.0f); setP (ParamID::noiseTail, 0.7f);
+    for (int i = 0; i < 30; ++i) frame (p, ed);
+    p.keyboardState.noteOn (1, 36, 1.0f);
+    for (int i = 0; i < 12; ++i) frame (p, ed);
+    save (ed, outDir, "ui-sand.png");
+    p.keyboardState.noteOff (1, 36, 0.0f);
+
     // a heavy preset with noise crunch, FM and an LFO on DRIVE and FM
     p.loadFactory (7);   // CRUNCH
     if (auto* d = p.apvts.getParameter (ParamID::distType)) d->setValueNotifyingHost (d->convertTo0to1 (3.0f));   // FOLD

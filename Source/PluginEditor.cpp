@@ -364,9 +364,8 @@ void WaveScreen::burst (float strength)
         }
         dust.push_back (d);
     }
-    // soft ripples of air instead of one heavy arc: three thin rings, a few ms apart
-    for (int k = 0; k < 3; ++k) rings.push_back ({ -0.05f * (float) k, power * (0.5f + 0.5f * strength) });
-    if (rings.size() > 9) rings.erase (rings.begin(), rings.begin() + (long) (rings.size() - 9));
+    rings.push_back ({ 0.0f, power * (0.5f + 0.5f * strength) });   // the pressure arc (owner's choice)
+    if (rings.size() > 6) rings.erase (rings.begin());
     flash = 1.0f;
 }
 
@@ -441,7 +440,7 @@ void WaveScreen::tick (float dt)
     if (dust.size() > 3000) dust.erase (dust.begin(), dust.begin() + (long) (dust.size() - 3000));
 
     for (auto& r : rings) r.t += dt;
-    rings.erase (std::remove_if (rings.begin(), rings.end(), [] (const Ring& r) { return r.t > 0.7f; }), rings.end());
+    rings.erase (std::remove_if (rings.begin(), rings.end(), [] (const Ring& r) { return r.t > 1.1f; }), rings.end());
     flash = jmax (0.0f, flash - dt / 0.18f);
 }
 
@@ -491,22 +490,49 @@ void WaveScreen::paint (Graphics& g)
         g.strokePath (wavePath (1.0f + j * (0.06f + 0.12f * level * power), NS, 0.0f), PathStrokeType (1.0f));
     }
 
+    if (noiseAmt > 0.01f)
+    {
+        // SAND WAVE: NOISE turns into a grainy sand contour around the wave, crackling with the bass
+        Random sr ((int64) (phaseT * 30.0f));
+        const int lim = jlimit (2, NS, (int) (playU * NS));
+        const float spread = 3.0f + 10.0f * noiseAmt * (0.4f + level);
+        for (int layer = 0; layer < 2; ++layer)
+        {
+            const float sc = 1.10f + 0.16f * (float) layer + 0.25f * noiseAmt * level;
+            for (int i = 0; i < NS; i += 2)
+            {
+                const float lit = i < lim ? 1.0f : 0.35f;
+                if (sr.nextFloat() > 0.35f + 0.6f * noiseAmt) continue;
+                const float x = xAt (i / (float) (NS - 1)) + (sr.nextFloat() - 0.5f) * 3.0f;
+                const float y = yAt (i, sc) + (sr.nextFloat() - 0.5f) * spread;
+                const float sz = 1.0f + sr.nextFloat() * 1.6f;
+                g.setColour (C::sand.withAlpha (lit * (0.18f + 0.5f * noiseAmt) * (layer == 0 ? 1.0f : 0.6f)));
+                g.fillRect (x, y, sz, sz);
+            }
+        }
+    }
+
     for (const auto& r : rings)
     {
-        if (r.t < 0.0f) continue;
-        const float k = r.t / 0.7f;                                   // gone in 0.7 s
-        const float rad = 12.0f + std::sqrt (k) * W * (0.55f + 0.5f * r.power);
-        const float a = jmax (0.0f, 1.0f - k);
+        const float rad = 10.0f + r.t * (W * (0.6f + 0.7f * r.power));
+        const float a = jmax (0.0f, 1.0f - r.t / 1.1f);
         Path arc;
-        arc.addCentredArc (xAt (0), m, rad, rad * 0.6f, 0, 0.0f, MathConstants<float>::pi, true);
-        g.setColour (hot.withAlpha (a * a * (0.10f + 0.16f * r.power)));
-        g.strokePath (arc, PathStrokeType (0.8f + 0.6f * r.power));
+        arc.addCentredArc (xAt (0), m, rad, rad * 0.55f, 0, 0.0f, MathConstants<float>::pi, true);
+        g.setColour (hot.withAlpha (a * a * 0.45f));
+        g.strokePath (arc, PathStrokeType (1.0f + 3.0f * r.power * a));
     }
 
     for (const auto& d : dust)
     {
         const float a = jmin (1.0f, d.life) * (0.22f + 0.62f * d.z);
-        g.setColour ((d.sand ? C::sand : hot).withAlpha (a));
+        if (d.sand)
+        {
+            const float sz = 1.3f + d.z * 2.4f;
+            g.setColour (C::sand.withAlpha (jmin (1.0f, a * 1.25f)));
+            g.fillRect (d.x, d.y, sz, sz);
+            continue;
+        }
+        g.setColour (hot.withAlpha (a));
         const float sp = std::abs (d.vx) + std::abs (d.vy);
         if (sp > 140.0f)
             g.drawLine (d.x - d.vx * 0.012f, d.y - d.vy * 0.012f, d.x, d.y, 0.6f + d.z * 1.1f);
@@ -519,8 +545,8 @@ void WaveScreen::paint (Graphics& g)
 
     if (flash > 0)
     {
-        const float r = 4.0f + 10.0f * power * flash + (1.0f - flash) * 8.0f;
-        g.setColour (hot.brighter (0.3f).withAlpha (flash * flash * 0.35f));
+        const float r = 6.0f + 18.0f * power * flash + (1.0f - flash) * 12.0f;
+        g.setColour (hot.brighter (0.3f).withAlpha (flash * 0.6f));
         g.fillEllipse (xAt (0) - r, m - r, r * 2, r * 2);
     }
 
