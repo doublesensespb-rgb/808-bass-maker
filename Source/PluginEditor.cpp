@@ -287,7 +287,7 @@ void Meter::paint (Graphics& g)
 // ================================================================ wave screen
 WaveScreen::WaveScreen (BassProcessor& p) : proc (p)
 {
-    dust.reserve (3200);
+    dust.reserve (7200);
     lastHits = proc.engine.vizHits.load();
     rebuildShape();
 }
@@ -334,19 +334,22 @@ bool WaveScreen::rollSand() { return rnd.nextFloat() < noiseAmt * 0.85f; }
 void WaveScreen::burst (float strength)
 {
     const float m = getHeight() * 0.5f, x0 = xAt (0);
-    const int n = (int) ((240.0f + 560.0f * power) * (0.45f + 0.55f * strength));
+    const auto pp = proc.modulatedParams();
+    // the blast follows the sound: PUNCH = how much dust, CLICK = how fast it flies, LENGTH = how long it hangs
+    const float amount = 0.55f + 0.9f * pp.punch, speed = 0.55f + 0.9f * pp.click, life = 0.5f + 1.0f * pp.length;
+    const int n = (int) ((600.0f + 1400.0f * power) * (0.45f + 0.55f * strength) * amount);   // fine dust: many tiny grains
     for (int i = 0; i < n; ++i)
     {
         Dust d;
         d.sand = rollSand();
         d.z = rnd.nextFloat();
-        d.life = 0.8f + rnd.nextFloat() * 1.3f;
+        d.life = (0.8f + rnd.nextFloat() * 1.3f) * life;
         if (rnd.nextFloat() < 0.6f)
         {
             // blast from the attack point, fanned out over the whole screen
             const float spread = rnd.nextFloat() < 0.85f ? 1.25f : 2.4f;
             const float ang = (rnd.nextFloat() - 0.5f) * MathConstants<float>::pi * spread;
-            const float sp = (160.0f + std::pow (rnd.nextFloat(), 0.55f) * (900.0f + 1900.0f * power)) * (0.6f + 0.4f * strength);
+            const float sp = (160.0f + std::pow (rnd.nextFloat(), 0.55f) * (900.0f + 1900.0f * power)) * (0.6f + 0.4f * strength) * speed;
             d.x = x0 + rnd.nextFloat() * 6.0f;
             d.y = m + (rnd.nextFloat() - 0.5f) * 20.0f;
             d.vx = std::cos (ang) * sp;
@@ -389,7 +392,7 @@ void WaveScreen::tick (float dt)
     const int lim = jmax (2, (int) (playU * NS));
 
     // continuous air: depends on what the bass is playing right now
-    emitAcc += dt * std::pow (level, 1.3f) * (90.0f + 420.0f * power) * (0.6f + p.drive);
+    emitAcc += dt * std::pow (level, 1.3f) * (230.0f + 1050.0f * power) * (0.6f + p.drive);
     while (emitAcc >= 1.0f)
     {
         emitAcc -= 1.0f;
@@ -407,7 +410,7 @@ void WaveScreen::tick (float dt)
         dust.push_back (d);
     }
     // NOISE: fine fast sparks crackling off the crests
-    sparkAcc += dt * p.noise * std::pow (level, 1.1f) * 520.0f;
+    sparkAcc += dt * p.noise * std::pow (level, 1.1f) * 1300.0f;
     while (sparkAcc >= 1.0f)
     {
         sparkAcc -= 1.0f;
@@ -425,18 +428,19 @@ void WaveScreen::tick (float dt)
         dust.push_back (d);
     }
 
-    const float drag = std::exp (-dt * 3.2f);
+    // DROP: the dust settles down faster (the pitch falls, so does the dust); FM: a fine shimmer in the cloud
+    const float drag = std::exp (-dt * 3.2f), fall = 22.0f + 90.0f * p.drop, shimmer = 260.0f * p.fm * (0.3f + level);
     for (auto& d : dust)
     {
         d.vx *= drag;
-        d.vy = d.vy * drag + 22.0f * dt;
+        d.vy = d.vy * drag + fall * dt + (shimmer > 0.0f ? (rnd.nextFloat() - 0.5f) * shimmer * dt * 6.0f : 0.0f);
         d.x += d.vx * dt;
         d.y += d.vy * dt;
         d.life -= dt * (0.55f + 0.45f * (1.0f - d.z));
     }
     dust.erase (std::remove_if (dust.begin(), dust.end(), [W, H] (const Dust& d)
                 { return d.life <= 0 || d.x < -20 || d.x > W + 20 || d.y < -20 || d.y > H + 20; }), dust.end());
-    if (dust.size() > 3000) dust.erase (dust.begin(), dust.begin() + (long) (dust.size() - 3000));
+    if (dust.size() > 7000) dust.erase (dust.begin(), dust.begin() + (long) (dust.size() - 7000));
 
     for (auto& r : rings) r.t += dt;
     rings.erase (std::remove_if (rings.begin(), rings.end(), [] (const Ring& r) { return r.t > 1.1f; }), rings.end());
@@ -504,7 +508,7 @@ void WaveScreen::paint (Graphics& g)
                 if (sr.nextFloat() > 0.35f + 0.6f * noiseAmt) continue;
                 const float x = xAt (i / (float) (NS - 1)) + (sr.nextFloat() - 0.5f) * 3.0f;
                 const float y = yAt (i, sc) + (sr.nextFloat() - 0.5f) * spread;
-                const float sz = 1.0f + sr.nextFloat() * 1.6f;
+                const float sz = 0.7f + sr.nextFloat() * 1.0f;
                 g.setColour (C::sand.withAlpha (lit * (0.18f + 0.5f * noiseAmt) * (layer == 0 ? 1.0f : 0.6f)));
                 g.fillRect (x, y, sz, sz);
             }
@@ -526,18 +530,18 @@ void WaveScreen::paint (Graphics& g)
         const float a = jmin (1.0f, d.life) * (0.22f + 0.62f * d.z);
         if (d.sand)
         {
-            const float sz = 1.3f + d.z * 2.4f;
+            const float sz = 0.8f + d.z * 1.0f;
             g.setColour (C::sand.withAlpha (jmin (1.0f, a * 1.25f)));
             g.fillRect (d.x, d.y, sz, sz);
             continue;
         }
         g.setColour (hot.withAlpha (a));
         const float sp = std::abs (d.vx) + std::abs (d.vy);
-        if (sp > 140.0f)
-            g.drawLine (d.x - d.vx * 0.012f, d.y - d.vy * 0.012f, d.x, d.y, 0.6f + d.z * 1.1f);
+        if (sp > 260.0f)
+            g.drawLine (d.x - d.vx * 0.006f, d.y - d.vy * 0.006f, d.x, d.y, 0.5f + d.z * 0.6f);   // short, thin
         else
         {
-            const float s = 0.8f + d.z * 1.5f;
+            const float s = 0.6f + d.z * 0.8f;
             g.fillRect (d.x, d.y, s, s);
         }
     }

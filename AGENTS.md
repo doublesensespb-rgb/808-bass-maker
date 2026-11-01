@@ -62,6 +62,9 @@ POWER is a macro: more drive, more punch depth, more sub, harder clipper, and on
 The screen draws the wave from the same mapping functions as the DSP, on a stretched time axis (t = u^2) with the
 pitch softened, so CLICK/PUNCH are visible and the sine stays readable. Dust: a burst on every note (`vizHits`),
 60% from the attack point, 40% from all along the wave; continuous air is emitted in proportion to the live output level.
+Dust is FINE (0.6-1.4 px, thousands of grains, like noise). It follows the knobs: POWER = size/force of the blast,
+PUNCH = amount, CLICK = speed, LENGTH = how long it hangs, DROP = how fast it settles, DRIVE = heat colour + more air,
+NOISE = sand grains + sand wave, FM = fine shimmer, velocity = blast strength.
 
 Bottom row: NOISE panel (type < >, AMOUNT, TONE, TAIL) and LFO panel. Main row: CLICK PUNCH DROP POWER LENGTH DRIVE FM.
 RANDOM (big orange button, top right) animates every knob to a random but usable 808; LFO links stay.
