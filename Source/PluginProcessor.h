@@ -19,6 +19,7 @@ namespace ParamID
     inline constexpr const char* noiseTone = "noiseTone";
     inline constexpr const char* noiseTail = "noiseTail";
     inline constexpr const char* noiseType = "noiseType";
+    inline constexpr const char* distType  = "distType";
     // LFOs (same scheme as GRAIN FORM): "lfo1Rate", "lfo1Sync", "lfo1Div", "lfo1Mode", "lfo1Rise", "lfo1On"
     inline juce::String lfo (int index, const char* what) { return "lfo" + juce::String (index + 1) + what; }
 }
@@ -148,6 +149,7 @@ private:
     bool hostPlaying = false;
 
     std::atomic<float>* pNoiseType {};
+    std::atomic<float>* pDistType {};
     std::array<std::atomic<float>*, kNumLfos> pLfoSync {}, pLfoDiv {}, pLfoMode {}, pLfoRise {}, pLfoOn {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BassProcessor)

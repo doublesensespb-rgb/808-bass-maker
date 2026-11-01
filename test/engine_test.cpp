@@ -62,7 +62,8 @@ int main()
 
     // glide: overlapping note moves pitch smoothly (no instant jump)
     {
-        bass::Engine e; e.prepare (sr); bass::Params g; g.glide = 0.8f;   // engine still supports glide internally g.click = 0; g.punch = 0; g.drop = 0; g.drive = 0;
+        bass::Engine e; e.prepare (sr); bass::Params g; g.glide = 0.8f; g.click = 0;   // engine still supports glide internally
+        g.punch = 0; g.drop = 0; g.drive = 0;
         e.setParams (g);
         std::vector<float> o ((size_t) sr);
         e.noteOn (36, 1); e.render (o.data(), 24000);
@@ -80,6 +81,14 @@ int main()
         float pk = 0; bool bad = false;
         for (float v : z) { if (! std::isfinite (v)) bad = true; pk = std::fmax (pk, std::fabs (v)); }
         CHECK (! bad && pk < 1.0f, "noise %s: peak %.3f", bass::noiseNames()[nt], pk);
+    }
+    for (int dt = 0; dt < bass::kNumDists; ++dt)
+    {
+        bass::Params q; q.distType = dt; q.drive = 1.0f; q.power = 1.0f; q.noise = 0.6f;
+        auto z = renderNote (q, 33, 1.0, sr);
+        float pk = 0; bool bad = false;
+        for (float v : z) { if (! std::isfinite (v)) bad = true; pk = std::fmax (pk, std::fabs (v)); }
+        CHECK (! bad && pk < 1.0f && pk > 0.3f, "dist %s: peak %.3f", bass::distNames()[dt], pk);
     }
     // FM adds energy above the fundamental, odd harmonics: compare 3rd harmonic level vs 2nd with drive off
     {

@@ -56,6 +56,8 @@ int main (int argc, char** argv)
 
     // a heavy preset with noise crunch, FM and an LFO on DRIVE and FM
     p.loadFactory (7);   // CRUNCH
+    if (auto* d = p.apvts.getParameter (ParamID::distType)) d->setValueNotifyingHost (d->convertTo0to1 (3.0f));   // FOLD
+    if (auto* d = p.apvts.getParameter (ParamID::drive)) d->setValueNotifyingHost (0.85f);
     p.setModulation (mtDrive, 0, 0.35f);
     p.setModulation (mtFm, 1, -0.3f);
     p.setModulation (mtNoiseTone, 0, 0.25f);

@@ -33,7 +33,15 @@ struct Params
     float noiseTone = 0.55f; // dark .. bright
     float noiseTail = 0.35f; // only the attack .. the whole tail
     int   noiseType = 0;     // see noiseNames()
+    int   distType  = 0;     // see distNames()
 };
+
+inline const char* const* distNames()
+{
+    static const char* const n[] = { "ASYM", "TUBE", "HARD", "FOLD", "RECTIFY" };
+    return n;
+}
+constexpr int kNumDists = 5;
 
 inline const char* const* noiseNames()
 {
@@ -82,6 +90,23 @@ inline double asym (double x, double g)
     const double b = 0.28;
     const double n = std::tanh (g + b) - std::tanh (b);
     return (std::tanh (g * x + b) - std::tanh (b)) / n;
+}
+
+// all drive algorithms: 0 at 0, roughly +/-1 at full scale
+inline double driveShape (int type, double x, double g)
+{
+    switch (type)
+    {
+        default:
+        case 0: return asym (x, g);                                                     // ASYM: the Serum patch
+        case 1: { const double v = g * x + 0.15 * g * x * x;                            // TUBE: soft, warm, a bit uneven
+                  return std::tanh (v) / std::tanh (g + 0.15 * g); }
+        case 2: { const double v = g * x * 1.4;                                         // HARD: flat tops with a tiny knee
+                  return v / std::pow (1.0 + std::pow (std::fabs (v), 8.0), 0.125); }
+        case 3: return std::sin (x * (0.6 + 0.55 * g) * kPi * 0.5);                    // FOLD (as in GRAIN FORM): folds the wave back
+        case 4: { const double v = 0.45 * x + 0.9 * std::fabs (x) - 0.35 * std::fabs (x) * std::fabs (x);  // RECTIFY: octave up, nasty
+                  return std::tanh (g * v) / std::tanh (g); }
+    }
 }
 
 // Theoretical waveform for the screen: n points across `seconds`, values -1..1, plus the envelope.
@@ -306,6 +331,7 @@ public:
         const double toneHz = 500.0 * std::pow (36.0, (double) p.noiseTone);
         const double toneK = 1.0 - std::exp (-2.0 * kPi * toneHz / osr);
         const double fmGain = p.fm * 1.15;
+        const int dType = p.distType < 0 ? 0 : (p.distType >= kNumDists ? kNumDists - 1 : p.distType);
         const int nType = p.noiseType < 0 ? 0 : (p.noiseType >= kNumNoises ? kNumNoises - 1 : p.noiseType);
 
         for (int i = 0; i < n; ++i)
@@ -346,7 +372,7 @@ public:
                     // drive follows the tail (Serum: LFO 1 -> Dist Drive)
                     const double gNow = gD * (0.5 + 0.5 * shape);
                     const double x = s + noise + fmx;
-                    const double dirt = x + mix * (asym (x, gNow) - x);
+                    const double dirt = x + mix * (driveShape (dType, x, gNow) - x);
 
                     // clean sub below 90 Hz + dirt above it
                     const double sub = subLo (s) * subGain;

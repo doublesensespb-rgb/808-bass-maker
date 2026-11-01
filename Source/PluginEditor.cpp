@@ -39,28 +39,17 @@ FlatLook::FlatLook()
 
 void FlatLook::drawRotarySlider (Graphics& g, int x, int y, int w, int h, float pos, float start, float end, Slider& s)
 {
-    const int sz = (int) s.getProperties()["sz"];   // 0 small, 1 normal, 2 big
+    // GRAIN FORM knob: a quiet grey disc with one light pointer line, no value ring
     const float size = (float) jmin (w, h);
     const Point<float> c (x + w * 0.5f, y + h * 0.5f);
-    const float sw = sz == 2 ? 6.0f : sz == 1 ? 4.0f : 3.0f;
-    const float r = size * 0.5f - sw * 0.5f - 1.0f;
+    const float r = size * 0.5f - 1.0f;
     const float ang = start + pos * (end - start);
-
-    g.setColour (C::track);
-    g.strokePath (arcPath (c, r, start, end), PathStrokeType (sw, PathStrokeType::curved, PathStrokeType::rounded));
-    if (pos > 0.002f)
-    {
-        g.setColour (C::accent);
-        g.strokePath (arcPath (c, r, start, ang), PathStrokeType (sw, PathStrokeType::curved, PathStrokeType::rounded));
-    }
-    const float ir = r - (sz == 2 ? 13.0f : sz == 1 ? 9.0f : 7.0f);
-    g.setColour (C::knob);
-    g.fillEllipse (c.x - ir, c.y - ir, ir * 2, ir * 2);
-    g.setColour (C::knobRim);
-    g.drawEllipse (c.x - ir, c.y - ir, ir * 2, ir * 2, 1.0f);
-    const float r0 = ir * 0.32f, r1 = ir - (sz == 2 ? 9.0f : sz == 1 ? 6.0f : 4.0f);
+    g.setColour (s.isMouseOverOrDragging() ? C::knob.brighter (0.12f) : C::knob);
+    g.fillEllipse (c.x - r, c.y - r, r * 2, r * 2);
+    g.setColour (C::knobRim.withAlpha (0.55f));
+    g.drawEllipse (c.x - r + 0.5f, c.y - r + 0.5f, r * 2 - 1.0f, r * 2 - 1.0f, 1.0f);
     g.setColour (C::title);
-    g.drawLine (Line<float> (c.getPointOnCircumference (r0, ang), c.getPointOnCircumference (r1, ang)), sz == 2 ? 3.5f : sz == 1 ? 2.2f : 1.8f);
+    g.drawLine (Line<float> (c.getPointOnCircumference (r * 0.14f, ang), c.getPointOnCircumference (r * 0.74f, ang)), jmax (1.8f, r * 0.075f));
 }
 
 void FlatLook::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool over, bool down)
@@ -84,7 +73,7 @@ void FlatLook::drawButtonText (Graphics& g, TextButton& b, bool, bool)
 
 void FlatLook::drawComboBox (Graphics& g, int w, int h, bool, int, int, int, int, ComboBox&)
 {
-    g.setColour (C::button);
+    g.setColour (C::field);
     g.fillRoundedRectangle (0, 0, (float) w, (float) h, 6.0f);
     Path a;
     const float ax = w - 12.0f, ay = h * 0.5f;
@@ -181,26 +170,32 @@ Knob::Knob (BassProcessor& p, const String& paramId, const String& n, Size sz)
         }
 }
 
-float Knob::knobSize() const { return size == Size::Big ? 112.0f : size == Size::Normal ? 62.0f : 42.0f; }
+float Knob::knobSize() const { return size == Size::Big ? 104.0f : size == Size::Normal ? 56.0f : 38.0f; }
 
 void Knob::resized()
 {
     const int k = (int) knobSize();
-    slider.setBounds ((getWidth() - k) / 2, size == Size::Small ? 4 : 6, k, k);
+    const int labelH = size == Size::Big ? 22 : size == Size::Normal ? 18 : 15;
+    slider.setBounds ((getWidth() - k) / 2, labelH + 4, k, k);
     refreshMods();
 }
 
 void Knob::paint (Graphics& g)
 {
-    const int k = slider.getBottom();
     const bool big = size == Size::Big, small = size == Size::Small;
-    g.setColour (big ? C::title : C::label);
-    g.setFont (font (big ? 14.0f : small ? 10.5f : 11.5f, big ? 0.22f : 0.12f));
-    g.drawText (name, 0, k + (small ? 2 : 4), getWidth(), 16, Justification::centred, false);
-    g.setColour (C::faint);
-    g.setFont (font (small ? 10.0f : 11.0f, 0.04f));
-    const String v = param != nullptr ? param->getCurrentValueAsText().replace (" %", "%") : String();
-    g.drawText (v, 0, k + (small ? 16 : 20), getWidth(), 14, Justification::centred, false);
+    const int labelH = big ? 22 : small ? 15 : 18;
+    g.setColour (C::label);
+    g.setFont (font (big ? 15.0f : small ? 10.0f : 12.0f, big ? 0.2f : 0.08f, ! small));
+    g.drawText (name, 0, 0, getWidth(), labelH, Justification::centred, false);
+
+    const String v = param != nullptr ? param->getCurrentValueAsText() : String();
+    const int bw = big ? 76 : small ? 50 : 60, bh = big ? 22 : small ? 17 : 20;
+    const Rectangle<float> box ((getWidth() - bw) * 0.5f, (float) slider.getBottom() + (small ? 4.0f : 7.0f), (float) bw, (float) bh);
+    g.setColour (C::field);
+    g.fillRoundedRectangle (box, 5.0f);
+    g.setColour (C::text);
+    g.setFont (font (small ? 10.0f : 11.5f, 0.03f));
+    g.drawText (v, box, Justification::centred, false);
 }
 
 void Knob::paintOverChildren (Graphics& g)
@@ -223,7 +218,7 @@ void Knob::paintOverChildren (Graphics& g)
 
     const float base = (float) slider.valueToProportionOfLength (slider.getValue());
     const float tw = size == Size::Big ? 3.0f : 2.2f;
-    float ringR = r + 3.5f;
+    float ringR = r + 4.0f;
     for (int l = 0; l < kNumLfos; ++l)
     {
         if (! proc.hasModulation (target, l)) continue;
@@ -235,10 +230,9 @@ void Knob::paintOverChildren (Graphics& g)
     }
     // live modulated value on the value ring
     const float live = proc.modNorm[(size_t) target].load();
-    const float sw = size == Size::Big ? 6.0f : size == Size::Normal ? 4.0f : 3.0f;
-    const auto p = c.getPointOnCircumference (r - sw * 0.5f - 1.0f, angleOf (live));
+    const auto p = c.getPointOnCircumference (r + 4.0f, angleOf (live));
     g.setColour (Colours::white);
-    g.fillEllipse (Rectangle<float> (sw + 1.5f, sw + 1.5f).withCentre (p));
+    g.fillEllipse (Rectangle<float> (5.5f, 5.5f).withCentre (p));
 }
 
 void Knob::refreshMods()
@@ -258,7 +252,7 @@ void Knob::refreshMods()
         ch->setVisible (on);
         if (! on) continue;
         const float a = MathConstants<float>::pi * (0.25f + 0.2f * (float) shown++);
-        auto rect = Rectangle<float> (chip, chip).withCentre (c.getPointOnCircumference (r + chip * 0.75f, a)).toNearestInt();
+        auto rect = Rectangle<float> (chip, chip).withCentre (c.getPointOnCircumference (r + chip * 0.85f, a)).toNearestInt();
         ch->setBounds (rect.constrainedWithin (getLocalBounds()));
         ch->repaint();
     }
@@ -283,10 +277,10 @@ void Knob::itemDropped (const SourceDetails& s)
 void Meter::paint (Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
-    g.setColour (C::button);
+    g.setColour (C::field);
     g.fillRoundedRectangle (b, 3.0f);
     const float h = jlimit (0.0f, 1.0f, value) * b.getHeight();
-    g.setColour (value > 0.97f ? C::accent : C::air);
+    g.setColour (value > 0.97f ? Colour (0xffe0625a) : C::air.withAlpha (0.9f));
     g.fillRoundedRectangle (b.withTop (b.getBottom() - h), 3.0f);
 }
 
@@ -335,6 +329,8 @@ void WaveScreen::rebuildShape()
     }
 }
 
+bool WaveScreen::rollSand() { return rnd.nextFloat() < noiseAmt * 0.85f; }
+
 void WaveScreen::burst (float strength)
 {
     const float m = getHeight() * 0.5f, x0 = xAt (0);
@@ -342,6 +338,7 @@ void WaveScreen::burst (float strength)
     for (int i = 0; i < n; ++i)
     {
         Dust d;
+        d.sand = rollSand();
         d.z = rnd.nextFloat();
         d.life = 0.8f + rnd.nextFloat() * 1.3f;
         if (rnd.nextFloat() < 0.6f)
@@ -387,6 +384,8 @@ void WaveScreen::tick (float dt)
     playU = nt < windowSec ? (float) std::sqrt (nt / windowSec) : 1.0f;
 
     const auto p = proc.modulatedParams();
+    heatAmt += (p.drive * (0.75f + 0.25f * p.power) - heatAmt) * jmin (1.0f, dt * 8.0f);
+    noiseAmt = p.noise;
     const float H = (float) getHeight(), W = (float) getWidth();
     const int lim = jmax (2, (int) (playU * NS));
 
@@ -398,6 +397,7 @@ void WaveScreen::tick (float dt)
         const int idx = rnd.nextInt (lim);
         if (rnd.nextFloat() > std::abs (wave[(size_t) idx]) + 0.04f) continue;
         Dust d;
+        d.sand = rollSand();
         const float s = wave[(size_t) idx] >= 0 ? -1.0f : 1.0f;
         d.z = rnd.nextFloat();
         d.life = 0.6f + rnd.nextFloat() * 0.9f;
@@ -414,6 +414,7 @@ void WaveScreen::tick (float dt)
         sparkAcc -= 1.0f;
         const int idx = rnd.nextInt (lim);
         Dust d;
+        d.sand = true;   // NOISE sparks are sand
         const float ang = rnd.nextFloat() * MathConstants<float>::twoPi;
         const float sp = 200.0f + rnd.nextFloat() * 600.0f;
         d.z = 0.6f + 0.4f * rnd.nextFloat();
@@ -447,7 +448,8 @@ void WaveScreen::paint (Graphics& g)
 {
     const auto b = getLocalBounds().toFloat();
     const float W = b.getWidth(), H = b.getHeight(), m = H * 0.5f, amp = (m - 22.0f) * (0.58f + 0.36f * power);
-    g.setColour (C::screen);
+    const Colour hot = C::heat (heatAmt);          // the air warms up with DRIVE
+    g.setColour (C::screen.interpolatedWith (Colour (0xff1d1510), heatAmt * 0.8f));
     g.fillRoundedRectangle (b, 10.0f);
 
     {
@@ -456,7 +458,7 @@ void WaveScreen::paint (Graphics& g)
         for (int i = 0; i < NS; i += 2) fill.lineTo (xAt (i / (float) (NS - 1)), m - env[(size_t) i] * amp);
         for (int i = NS - 1; i >= 0; i -= 2) fill.lineTo (xAt (i / (float) (NS - 1)), m + env[(size_t) i] * amp);
         fill.closeSubPath();
-        g.setColour (C::air.withAlpha (0.035f));
+        g.setColour (hot.withAlpha (0.04f + 0.03f * heatAmt));
         g.fillPath (fill);
     }
     g.setColour (Colour (0xff222222));
@@ -479,12 +481,12 @@ void WaveScreen::paint (Graphics& g)
         const float gph = std::fmod (phaseT * (0.45f + level * 0.9f) + j / 4.0f, 1.0f);
         const float a = (1.0f - gph) * (1.0f - gph) * (0.03f + 0.16f * level * (0.4f + power));
         if (a < 0.004f) continue;
-        g.setColour (C::air.withAlpha (a));
+        g.setColour (hot.withAlpha (a));
         g.strokePath (wavePath (1.0f + gph * (0.4f + 1.6f * power * (0.3f + level)), NS, 5.0f * gph), PathStrokeType (1.0f));
     }
     for (int j = 3; j >= 1; --j)
     {
-        g.setColour (C::air.withAlpha (0.05f + 0.02f * (3 - j) + 0.08f * level));
+        g.setColour (hot.withAlpha (0.05f + 0.02f * (3 - j) + 0.08f * level));
         g.strokePath (wavePath (1.0f + j * (0.06f + 0.12f * level * power), NS, 0.0f), PathStrokeType (1.0f));
     }
 
@@ -494,14 +496,14 @@ void WaveScreen::paint (Graphics& g)
         const float a = jmax (0.0f, 1.0f - r.t / 1.1f);
         Path arc;
         arc.addCentredArc (xAt (0), m, rad, rad * 0.55f, 0, 0.0f, MathConstants<float>::pi, true);
-        g.setColour (C::air.withAlpha (a * a * 0.45f));
+        g.setColour (hot.withAlpha (a * a * 0.45f));
         g.strokePath (arc, PathStrokeType (1.0f + 3.0f * r.power * a));
     }
 
     for (const auto& d : dust)
     {
         const float a = jmin (1.0f, d.life) * (0.22f + 0.62f * d.z);
-        g.setColour (C::air.withAlpha (a));
+        g.setColour ((d.sand ? C::sand : hot).withAlpha (a));
         const float sp = std::abs (d.vx) + std::abs (d.vy);
         if (sp > 140.0f)
             g.drawLine (d.x - d.vx * 0.012f, d.y - d.vy * 0.012f, d.x, d.y, 0.6f + d.z * 1.1f);
@@ -515,15 +517,20 @@ void WaveScreen::paint (Graphics& g)
     if (flash > 0)
     {
         const float r = 6.0f + 18.0f * power * flash + (1.0f - flash) * 12.0f;
-        g.setColour (Colours::white.withAlpha (flash * 0.6f));
+        g.setColour (hot.brighter (0.3f).withAlpha (flash * 0.6f));
         g.fillEllipse (xAt (0) - r, m - r, r * 2, r * 2);
     }
 
     const PathStrokeType st (1.8f + 1.4f * power, PathStrokeType::curved, PathStrokeType::rounded);
-    g.setColour (Colour (0xff3a3a38));
+    g.setColour (Colour (0xff3a3836));
     g.strokePath (wavePath (1.0f, NS, 0.0f), st);
-    g.setColour (C::air);
-    g.strokePath (wavePath (1.0f, jlimit (2, NS, (int) (playU * NS)), 0.0f), st);
+    const auto lit = wavePath (1.0f, jlimit (2, NS, (int) (playU * NS)), 0.0f);
+    g.setColour (hot.withAlpha (0.10f + 0.10f * heatAmt));                       // soft glow, as in GRAIN FIELD
+    g.strokePath (lit, PathStrokeType (st.getStrokeThickness() * 4.0f, PathStrokeType::curved, PathStrokeType::rounded));
+    g.setColour (hot.withAlpha (0.18f));
+    g.strokePath (lit, PathStrokeType (st.getStrokeThickness() * 2.2f, PathStrokeType::curved, PathStrokeType::rounded));
+    g.setColour (C::air.interpolatedWith (hot, 0.85f));
+    g.strokePath (lit, st);
 
     if (playU < 1.0f)
     {
@@ -623,8 +630,8 @@ void PresetBar::askSave()
     }), false);
 }
 
-// ================================================================ noise picker
-NoisePicker::NoisePicker (BassProcessor& p) : proc (p)
+// ================================================================ choice picker
+ChoicePicker::ChoicePicker (BassProcessor& p, const char* id, StringArray n, bool tex) : proc (p), paramId (id), names (std::move (n)), texture (tex)
 {
     for (auto* b : { &prev, &next }) addAndMakeVisible (*b);
     prev.onClick = [this] { setIndex (index() - 1); };
@@ -632,12 +639,13 @@ NoisePicker::NoisePicker (BassProcessor& p) : proc (p)
     setMouseCursor (MouseCursor::PointingHandCursor);
 }
 
-int NoisePicker::index() const { return (int) proc.apvts.getRawParameterValue (ParamID::noiseType)->load(); }
+int ChoicePicker::index() const { return (int) proc.apvts.getRawParameterValue (paramId)->load(); }
 
-void NoisePicker::setIndex (int i)
+void ChoicePicker::setIndex (int i)
 {
-    i = ((i % bass::kNumNoises) + bass::kNumNoises) % bass::kNumNoises;
-    if (auto* prm = proc.apvts.getParameter (ParamID::noiseType))
+    const int n = names.size();
+    i = ((i % n) + n) % n;
+    if (auto* prm = proc.apvts.getParameter (paramId))
     {
         prm->beginChangeGesture();
         prm->setValueNotifyingHost (prm->convertTo0to1 ((float) i));
@@ -646,38 +654,42 @@ void NoisePicker::setIndex (int i)
     repaint();
 }
 
-void NoisePicker::resized()
+void ChoicePicker::resized()
 {
     auto r = getLocalBounds();
-    prev.setBounds (r.removeFromLeft (28));
-    next.setBounds (r.removeFromRight (28));
-    body = r.reduced (4, 0);
+    const int bw = jmin (26, r.getHeight());
+    prev.setBounds (r.removeFromLeft (bw));
+    next.setBounds (r.removeFromRight (bw));
+    body = r.reduced (3, 0);
 }
 
-void NoisePicker::paint (Graphics& g)
+void ChoicePicker::paint (Graphics& g)
 {
     auto r = body.toFloat();
-    g.setColour (C::screen);
-    g.fillRoundedRectangle (r, 6.0f);
-    // tiny noise texture (deterministic per type)
-    Random rr (index() * 77 + 5);
-    g.setColour (C::air.withAlpha (0.13f));
-    for (float x = r.getX() + 6; x < r.getRight() - 6; x += 2.0f)
+    g.setColour (C::field);
+    g.fillRoundedRectangle (r, 5.0f);
+    const int idx = jlimit (0, names.size() - 1, index());
+    if (texture)
     {
-        const float h = (index() == 7 || index() == 3) ? (rr.nextFloat() < 0.08f ? r.getHeight() * 0.35f : 1.5f) : rr.nextFloat() * r.getHeight() * 0.32f;
-        g.fillRect (x, r.getCentreY() - h, 1.0f, h * 2.0f);
+        Random rr (idx * 77 + 5);
+        g.setColour (C::sand.withAlpha (0.22f));
+        for (float x = r.getX() + 6; x < r.getRight() - 6; x += 2.0f)
+        {
+            const float h = (idx == 7 || idx == 3) ? (rr.nextFloat() < 0.08f ? r.getHeight() * 0.35f : 1.0f) : rr.nextFloat() * r.getHeight() * 0.3f;
+            g.fillRect (x, r.getCentreY() - h, 1.0f, h * 2.0f);
+        }
     }
     g.setColour (C::title);
-    g.setFont (font (12.0f, 0.14f));
-    g.drawText (bass::noiseNames()[jlimit (0, bass::kNumNoises - 1, index())], r, Justification::centred, false);
+    g.setFont (font (11.5f, 0.12f, true));
+    g.drawText (names[idx], r, Justification::centred, false);
 }
 
-void NoisePicker::mouseDown (const MouseEvent& e)
+void ChoicePicker::mouseDown (const MouseEvent& e)
 {
     if (! body.contains (e.getPosition())) return;
     PopupMenu m;
-    for (int i = 0; i < bass::kNumNoises; ++i) m.addItem (i + 1, bass::noiseNames()[i], true, i == index());
-    Component::SafePointer<NoisePicker> safe (this);
+    for (int i = 0; i < names.size(); ++i) m.addItem (i + 1, names[i], true, i == index());
+    Component::SafePointer<ChoicePicker> safe (this);
     m.showMenuAsync (PopupMenu::Options().withTargetComponent (this), [safe] (int r) { if (safe != nullptr && r > 0) safe->setIndex (r - 1); });
 }
 
@@ -939,11 +951,14 @@ void LfoEditor::paint (Graphics& g)
 
 // ================================================================ editor
 BassEditor::BassEditor (BassProcessor& p)
-    : AudioProcessorEditor (p), proc (p), screen (p), presetBar (p), noisePicker (p), lfoEditor (p)
+    : AudioProcessorEditor (p), proc (p), screen (p), presetBar (p),
+      noisePicker (p, ParamID::noiseType, [] { StringArray a; for (int i = 0; i < bass::kNumNoises; ++i) a.add (bass::noiseNames()[i]); return a; }(), true),
+      drivePicker (p, ParamID::distType, [] { StringArray a; for (int i = 0; i < bass::kNumDists; ++i) a.add (bass::distNames()[i]); return a; }(), false),
+      lfoEditor (p)
 {
     setLookAndFeel (&look);
     auto& s = proc.apvts;
-    for (auto* c : std::initializer_list<Component*> { &screen, &subMeter, &outMeter, &presetBar, &randomButton, &noisePicker, &lfoEditor })
+    for (auto* c : std::initializer_list<Component*> { &screen, &subMeter, &outMeter, &presetBar, &randomButton, &noisePicker, &drivePicker, &lfoEditor })
         addAndMakeVisible (c);
 
     for (auto [id, nm] : { std::pair<const char*, const char*> { ParamID::click, "CLICK" }, { ParamID::punch, "PUNCH" }, { ParamID::drop, "DROP" },
@@ -960,7 +975,7 @@ BassEditor::BassEditor (BassProcessor& p)
     }
 
     randomButton.getProperties().set ("accent", true);
-    randomButton.getProperties().set ("fh", 15.0f);
+    randomButton.getProperties().set ("fh", 14.0f);
     randomButton.setTooltip ("A new random 808 (always a working one)");
     randomButton.onClick = [this] { randomize(); };
     presetBar.onPick = [this] (int i) { proc.loadPresetByIndex (i); afterPresetLoad(); };
@@ -1007,7 +1022,7 @@ BassEditor::BassEditor (BassProcessor& p)
     }
     selectLfo (0);
 
-    setSize (900, 650);
+    setSize (900, 720);
     startTimerHz (60);
 }
 
@@ -1071,7 +1086,7 @@ void BassEditor::tick (float dt)
         for (size_t i = 0; i < animTo.size(); ++i)
             if (auto* prm = proc.apvts.getParameter (animTo[i].first))
             {
-                const bool isChoice = String (animTo[i].first) == ParamID::noiseType;
+                const bool isChoice = String (animTo[i].first) == ParamID::noiseType || String (animTo[i].first) == ParamID::distType;
                 const float v = isChoice ? (animT >= 1.0f ? animTo[i].second : animFrom[i]) : animFrom[i] + (animTo[i].second - animFrom[i]) * k;
                 prm->setValueNotifyingHost (prm->convertTo0to1 (v));
                 if (animT >= 1.0f) prm->endChangeGesture();
@@ -1088,91 +1103,96 @@ void BassEditor::tick (float dt)
     for (auto& t : lfoTabs) t->repaint();
     lfoEditor.tick();
     noisePicker.repaint();
+    drivePicker.repaint();
 }
 
 void BassEditor::paint (Graphics& g)
 {
     g.fillAll (C::bg);
 
+    // title, GRAIN FORM style: light, wide, spaced
     g.setColour (C::title);
-    g.setFont (font (31.0f, 0.06f, true));
-    g.drawText ("808 BASS MAKER", 0, 12, getWidth(), 38, Justification::centred, false);
+    g.setFont (font (34.0f, 0.06f));
+    g.drawText ("808 BASS MAKER", 32, 12, 360, 40, Justification::bottomLeft, false);
     g.setColour (C::dim);
-    g.setFont (font (11.0f, 0.24f));
-    g.drawText ("HEAVY 808 DESIGNER", 0, 50, getWidth(), 16, Justification::centred, false);
+    g.setFont (font (11.5f, 0.42f));
+    g.drawText ("HEAVY 808 DESIGNER", 34, 54, 360, 16, Justification::topLeft, false);
     g.setColour (C::faint);
-    g.setFont (font (10.0f, 0.14f));
-    g.drawText ("v0.11", presetBar.getX(), presetBar.getBottom() + 6, 60, 12, Justification::left, false);
+    g.setFont (font (10.0f, 0.1f));
+    g.drawText ("v0.12", presetBar.getRight() - 40, presetBar.getBottom() + 4, 40, 12, Justification::right, false);
 
+    for (auto r : { topPanel, noisePanel, lfoPanel })
+    {
+        g.setColour (C::panel);
+        g.fillRoundedRectangle (r.toFloat(), 14.0f);
+    }
     g.setColour (C::dim);
     g.setFont (font (10.5f, 0.16f));
     g.drawText ("SUB", subMeter.getX() - 14, subMeter.getBottom() + 6, subMeter.getWidth() + 28, 14, Justification::centred, false);
     g.drawText ("OUT", outMeter.getX() - 14, outMeter.getBottom() + 6, outMeter.getWidth() + 28, 14, Justification::centred, false);
 
-    for (auto r : { noisePanel, lfoPanel })
-    {
-        g.setColour (C::panel);
-        g.fillRoundedRectangle (r.toFloat(), 12.0f);
-    }
     g.setColour (C::label);
-    g.setFont (font (12.0f, 0.2f, true));
-    g.drawText ("NOISE", noisePanel.getX() + 16, noisePanel.getY() + 10, 120, 16, Justification::left, false);
+    g.setFont (font (12.5f, 0.16f, true));
+    g.drawText ("NOISE", noisePanel.getX() + 18, noisePanel.getY() + 12, 120, 16, Justification::left, false);
+    g.drawText ("MODULATION", lfoPanel.getX() + 18, lfoPanel.getY() + 12, 160, 16, Justification::left, false);
 
-    // LFO column labels
     const int x0 = lfoPanel.getX(), y0 = lfoPanel.getY();
     g.setColour (C::dim);
     g.setFont (font (10.0f, 0.14f));
-    g.drawText ("SHAPE",    x0 + 306, y0 + 12, 90, 14, Justification::left, false);
-    g.drawText ("MODE",     x0 + 306, y0 + 68, 90, 14, Justification::left, false);
-    g.drawText ("DIVISION", x0 + 404, y0 + 12, 90, 14, Justification::left, false);
-    g.drawText ("TEMPO",    x0 + 404, y0 + 68, 90, 14, Justification::left, false);
+    g.drawText ("SHAPE",    x0 + 306, y0 + 36, 90, 14, Justification::left, false);
+    g.drawText ("MODE",     x0 + 306, y0 + 90, 90, 14, Justification::left, false);
+    g.drawText ("DIVISION", x0 + 404, y0 + 36, 90, 14, Justification::left, false);
+    g.drawText ("TEMPO",    x0 + 404, y0 + 90, 90, 14, Justification::left, false);
     g.setColour (C::faint);
     g.setFont (font (9.5f, 0.1f));
-    g.drawFittedText ("DRAG A TAB\nONTO A KNOB", x0 + 12, y0 + 136, 80, 30, Justification::centred, 2);
+    g.drawFittedText ("DRAG A TAB\nONTO A KNOB", x0 + 12, y0 + 168, 84, 26, Justification::centred, 2);
 }
 
 void BassEditor::resized()
 {
     const int W = getWidth();
-    presetBar.setBounds (24, 20, 252, 30);
-    randomButton.setBounds (W - 24 - 150, 16, 150, 40);
+    presetBar.setBounds (W / 2 - 60, 26, 300, 32);
+    randomButton.setBounds (W - 24 - 140, 22, 140, 40);
 
-    subMeter.setBounds (28, 98, 6, 150);
-    outMeter.setBounds (W - 34, 98, 6, 150);
-    screen.setBounds (52, 80, W - 104, 182);
+    topPanel = { 20, 82, W - 40, 220 };
+    subMeter.setBounds (topPanel.getX() + 16, topPanel.getY() + 28, 6, 156);
+    outMeter.setBounds (topPanel.getRight() - 22, topPanel.getY() + 28, 6, 156);
+    screen.setBounds (topPanel.getX() + 40, topPanel.getY() + 14, topPanel.getWidth() - 80, 192);
 
-    const int top = 276, x0 = 30;
+    const int top = 318, x0 = 30;
     const float unit = (W - 2 * x0) / 7.5f;
     float x = (float) x0;
     for (auto& k : mainKnobs)
     {
         const bool big = k.get() == mainKnobs[3].get();
         const float w = big ? unit * 1.5f : unit;
-        k->setBounds ((int) x, big ? top : top + 22, (int) w, big ? 156 : 112);
+        k->setBounds ((int) x, big ? top : top + 20, (int) w, big ? 162 : 112);
+        if (k.get() == mainKnobs[5].get())
+            drivePicker.setBounds ((int) x + 2, top + 20 + 112, (int) w - 4, 24);
         x += w;
     }
 
-    noisePanel = { 24, 446, 262, 184 };
-    lfoPanel = { 298, 446, W - 24 - 298, 184 };
+    noisePanel = { 20, 494, 266, 206 };
+    lfoPanel = { 298, 494, W - 20 - 298, 206 };
 
-    noisePicker.setBounds (noisePanel.getX() + 14, noisePanel.getY() + 36, noisePanel.getWidth() - 28, 30);
+    noisePicker.setBounds (noisePanel.getX() + 14, noisePanel.getY() + 40, noisePanel.getWidth() - 28, 28);
     const int nkw = (noisePanel.getWidth() - 20) / 3;
     for (int i = 0; i < 3; ++i)
-        noiseKnobs[(size_t) i]->setBounds (noisePanel.getX() + 10 + i * nkw, noisePanel.getY() + 80, nkw, 96);
+        noiseKnobs[(size_t) i]->setBounds (noisePanel.getX() + 10 + i * nkw, noisePanel.getY() + 86, nkw, 100);
 
-    const int lx = lfoPanel.getX(), ly = lfoPanel.getY();
-    for (int l = 0; l < kNumLfos; ++l) lfoTabs[(size_t) l]->setBounds (lx + 12, ly + 14 + l * 40, 80, 32);
-    lfoEditor.setBounds (lx + 100, ly + 14, 196, 156);
+    const int lx = lfoPanel.getX(), ly = lfoPanel.getY() + 22;
+    for (int l = 0; l < kNumLfos; ++l) lfoTabs[(size_t) l]->setBounds (lx + 12, ly + 16 + l * 40, 84, 32);
+    lfoEditor.setBounds (lx + 104, ly + 16, 192, 158);
     for (auto& cp : lfoControls)
     {
         auto& c = *cp;
-        c.preset.setBounds (lx + 306, ly + 28, 90, 28);
+        c.preset.setBounds (lx + 306, ly + 30, 90, 28);
         c.mode.setBounds (lx + 306, ly + 84, 90, 28);
-        c.div.setBounds (lx + 404, ly + 28, 90, 28);
+        c.div.setBounds (lx + 404, ly + 30, 90, 28);
         c.sync.setBounds (lx + 404, ly + 84, 90, 28);
-        c.remove.setBounds (lx + 306, ly + 134, 188, 28);
-        c.rate->setBounds (lx + 500, ly + 8, lfoPanel.getWidth() - 506, 84);
-        c.rise->setBounds (lx + 500, ly + 92, lfoPanel.getWidth() - 506, 84);
+        c.remove.setBounds (lx + 306, ly + 140, 188, 28);
+        c.rate->setBounds (lx + 500, ly + 4, lfoPanel.getWidth() - 506, 86);
+        c.rise->setBounds (lx + 500, ly + 92, lfoPanel.getWidth() - 506, 86);
     }
     refreshAllMods();
 }

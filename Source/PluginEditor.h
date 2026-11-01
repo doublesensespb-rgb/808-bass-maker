@@ -5,22 +5,34 @@
 
 namespace Colours808
 {
-    inline const juce::Colour bg       { 0xff151515 };
-    inline const juce::Colour panel    { 0xff1b1b1b };
-    inline const juce::Colour screen   { 0xff101010 };
-    inline const juce::Colour button   { 0xff262626 };
-    inline const juce::Colour track    { 0xff2a2a2a };
-    inline const juce::Colour knob     { 0xff1e1e1e };
-    inline const juce::Colour knobRim  { 0xff303030 };
-    inline const juce::Colour title    { 0xfff1efea };
-    inline const juce::Colour text     { 0xffcfcdc8 };
-    inline const juce::Colour label    { 0xffb4b2a9 };
-    inline const juce::Colour dim      { 0xff8a8883 };
-    inline const juce::Colour faint    { 0xff6e6c67 };
-    inline const juce::Colour air      { 0xfff4f2ed };
-    inline const juce::Colour accent   { 0xfff0541b };
-    // LFO colours (as in GRAIN FORM): ice, mint, sand
-    inline juce::Colour lfo (int i) { return i == 0 ? juce::Colour (0xffa8dcff) : i == 1 ? juce::Colour (0xff9ee6c4) : juce::Colour (0xffe6cc92); }
+    // GRAIN FORM style: graphite, quiet grey knobs, copper accent
+    inline const juce::Colour bg       { 0xff1f2123 };
+    inline const juce::Colour panel    { 0xff28292b };
+    inline const juce::Colour screen   { 0xff121212 };
+    inline const juce::Colour button   { 0xff3a3d41 };
+    inline const juce::Colour field    { 0xff1b1c1e };   // value boxes, preset name
+    inline const juce::Colour track    { 0xff2e3033 };
+    inline const juce::Colour knob     { 0xff45484c };
+    inline const juce::Colour knobRim  { 0xff5c5f63 };
+    inline const juce::Colour title    { 0xffece6df };
+    inline const juce::Colour text     { 0xffd9d3cc };
+    inline const juce::Colour label    { 0xffece6df };
+    inline const juce::Colour dim      { 0xff968f88 };
+    inline const juce::Colour faint    { 0xff6c6863 };
+    inline const juce::Colour air      { 0xfff4f0ea };   // the air: pearl white
+    inline const juce::Colour sand     { 0xffd6be9c };   // NOISE grains
+    inline const juce::Colour accent   { 0xffd48c5c };   // copper
+    inline const juce::Colour accentDeep { 0xff956443 };
+    // DRIVE heats the air: pearl -> peach -> copper -> fire
+    inline juce::Colour heat (float d)
+    {
+        d = juce::jlimit (0.0f, 1.0f, d);
+        const juce::Colour c0 (0xfff4f0ea), c1 (0xfff2c9a8), c2 (0xffe08a55), c3 (0xffff5a1f);
+        return d < 0.33f ? c0.interpolatedWith (c1, d / 0.33f) : d < 0.66f ? c1.interpolatedWith (c2, (d - 0.33f) / 0.33f)
+                                                                         : c2.interpolatedWith (c3, (d - 0.66f) / 0.34f);
+    }
+    // LFO colours: copper, sand, pearl blue
+    inline juce::Colour lfo (int i) { return i == 0 ? juce::Colour (0xffe0965f) : i == 1 ? juce::Colour (0xffd6be9c) : juce::Colour (0xffa9c4d6); }
 }
 
 class FlatLook final : public juce::LookAndFeel_V4
@@ -96,7 +108,8 @@ public:
     void tick (float dt);
 
 private:
-    struct Dust { float x, y, vx, vy, life, z; };
+    struct Dust { float x, y, vx, vy, life, z; bool sand = false; };
+    bool rollSand();
     struct Ring { float t, power; };
     void rebuildShape();
     void burst (float strength);
@@ -110,7 +123,7 @@ private:
     std::vector<Ring> rings;
     juce::Random rnd { 808 };
     int lastHits = 0;
-    float level = 0, power = 0.6f, playU = 1.0f, flash = 0, phaseT = 0, emitAcc = 0, sparkAcc = 0;
+    float level = 0, power = 0.6f, heatAmt = 0, noiseAmt = 0, playU = 1.0f, flash = 0, phaseT = 0, emitAcc = 0, sparkAcc = 0;
     double windowSec = 1.5;
     bool previewHeld = false;
 };
@@ -143,11 +156,11 @@ private:
     std::unique_ptr<juce::AlertWindow> saveWindow;
 };
 
-// NOISE type: < NAME >, click the name for the list
-class NoisePicker final : public juce::Component
+// Choice picker (NOISE type, DRIVE type): < NAME >, click the name for the list
+class ChoicePicker final : public juce::Component
 {
 public:
-    explicit NoisePicker (BassProcessor&);
+    ChoicePicker (BassProcessor&, const char* paramId, juce::StringArray names, bool noiseTexture);
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -155,6 +168,9 @@ private:
     int index() const;
     void setIndex (int);
     BassProcessor& proc;
+    juce::String paramId;
+    juce::StringArray names;
+    bool texture;
     juce::TextButton prev { "<" }, next { ">" };
     juce::Rectangle<int> body;
 };
@@ -231,7 +247,7 @@ private:
     PresetBar presetBar;
     juce::TextButton randomButton { "RANDOM" };
     std::vector<std::unique_ptr<Knob>> mainKnobs, noiseKnobs;
-    NoisePicker noisePicker;
+    ChoicePicker noisePicker, drivePicker;
 
     struct LfoControls
     {
@@ -246,7 +262,7 @@ private:
     LfoEditor lfoEditor;
     int selectedLfo = 0;
 
-    juce::Rectangle<int> noisePanel, lfoPanel;
+    juce::Rectangle<int> noisePanel, lfoPanel, topPanel;
     juce::Random rnd;
     std::vector<std::pair<const char*, float>> animTo;
     std::vector<float> animFrom;

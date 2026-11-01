@@ -19,6 +19,7 @@ BassProcessor::BassProcessor()
         jassert (modParams[(size_t) t] != nullptr);
     }
     pNoiseType = apvts.getRawParameterValue (ParamID::noiseType);
+    pDistType = apvts.getRawParameterValue (ParamID::distType);
     for (int l = 0; l < kNumLfos; ++l)
     {
         pLfoSync[(size_t) l] = apvts.getRawParameterValue (ParamID::lfo (l, "Sync"));
@@ -57,6 +58,9 @@ AudioProcessorValueTreeState::ParameterLayout BassProcessor::layout()
     StringArray nn;
     for (int i = 0; i < bass::kNumNoises; ++i) nn.add (bass::noiseNames()[i]);
     ps.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::noiseType, 1 }, "Noise Type", nn, 0));
+    StringArray dn;
+    for (int i = 0; i < bass::kNumDists; ++i) dn.add (bass::distNames()[i]);
+    ps.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::distType, 1 }, "Drive Type", dn, 0));
 
     auto secFmt = [] (float v, int) { return v < 0.01f ? String ("OFF") : String (v, 2) + " s"; };
     auto hzFmt  = [] (float v, int) { return String (v, v < 10.0f ? 2 : 1) + " Hz"; };
@@ -106,6 +110,7 @@ bass::Params BassProcessor::paramsFrom (const float* v) const
     p.length = v[mtLength]; p.drive = v[mtDrive]; p.fm = v[mtFm]; p.output = v[mtOutput];
     p.noise = v[mtNoise]; p.noiseTone = v[mtNoiseTone]; p.noiseTail = v[mtNoiseTail];
     p.noiseType = (int) pNoiseType->load();
+    p.distType = (int) pDistType->load();
     p.glide = 0.0f;   // GLIDE removed in 0.11
     return p;
 }
@@ -422,6 +427,7 @@ void BassProcessor::loadFactory (int index)
     setParam (apvts, ParamID::fm, p.fm);         setParam (apvts, ParamID::noise, p.noise);
     setParam (apvts, ParamID::noiseTone, p.noiseTone); setParam (apvts, ParamID::noiseTail, p.noiseTail);
     setParam (apvts, ParamID::noiseType, (float) p.noiseType);
+    setParam (apvts, ParamID::distType, (float) p.distType);
     clearModulations();
     for (int lf = 0; lf < kNumLfos; ++lf)
     {
@@ -503,6 +509,7 @@ void BassProcessor::randomTargets (Random& r, std::vector<std::pair<const char*,
     out.push_back ({ ParamID::noiseTone, 0.25f + 0.6f * r.nextFloat() });
     out.push_back ({ ParamID::noiseTail, 0.1f + 0.8f * r.nextFloat() });
     out.push_back ({ ParamID::noiseType, (float) r.nextInt (bass::kNumNoises) });
+    out.push_back ({ ParamID::distType, r.nextFloat() < 0.5f ? 0.0f : (float) r.nextInt (bass::kNumDists) });
 }
 
 // ===========================================================================
