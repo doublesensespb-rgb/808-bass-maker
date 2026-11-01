@@ -41,7 +41,7 @@ POWER is a macro: more drive, more punch depth, more sub, harder clipper, and on
   NO value ring, no highlights/3D), name above, value in a dark box below; light wide spaced title on the left.
   Accent: copper `0xffd48c5c`. The "air" on the screen is pearl white: the bass BLOWS; DRIVE heats it
   (pearl -> peach -> copper -> fire, `Colours808::heat`), NOISE AMOUNT mixes in sand grains (`Colours808::sand`).
-  Attack: one pressure arc + flash (owner chose this over soft ripples). NOISE also draws a grainy SAND WAVE
+  Attack: flash + dust only. NO arc/rings on the attack (owner asked to remove it). NOISE also draws a grainy SAND WAVE
   around the wave; sand grains never take the heat colour.
   ALL UI text is English (no Russian in the plugin).
 - **Never change** `PLUGIN_MANUFACTURER_CODE Thmt`, `PLUGIN_CODE B808`, `BUNDLE_ID com.thematic.808bassmaker`, `PRODUCT_NAME`.
@@ -92,7 +92,7 @@ DICE, wave screen with white air/dust, SUB/OUT meters, click on the screen plays
 v0.11: NOISE module (WHITE PINK BROWN VINYL TAPE HUM DIRT DUST) into the drive, FM odd harmonics knob, 3 LFOs from
 GRAIN FORM, preset SAVE + user presets, DICE -> big RANDOM, GLIDE knob removed, 9 factory presets.
 
-v0.12: GRAIN FORM look, drive types (distType param), heat colour from DRIVE, sand grains from NOISE, pressure arc on attack, sand wave.
+v0.12: GRAIN FORM look, drive types (distType param), heat colour from DRIVE, sand grains from NOISE, no attack arc, sand wave.
 
 ## 7. Ideas not started
 

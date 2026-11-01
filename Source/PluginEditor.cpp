@@ -364,8 +364,7 @@ void WaveScreen::burst (float strength)
         }
         dust.push_back (d);
     }
-    rings.push_back ({ 0.0f, power * (0.5f + 0.5f * strength) });   // the pressure arc (owner's choice)
-    if (rings.size() > 6) rings.erase (rings.begin());
+    // no pressure arc: the owner asked to remove it (flash + dust only)
     flash = 1.0f;
 }
 
