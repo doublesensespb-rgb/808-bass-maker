@@ -1,0 +1,106 @@
+name: Build
+
+# Builds run only when started by hand (gh workflow run build.yml), after the owner approves the changes.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get JUCE
+        run: git clone --depth 1 --branch 8.0.10 https://github.com/juce-framework/JUCE.git JUCE
+
+      - name: Configure
+        run: cmake -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel --target BassMaker_VST3 BassMaker_Standalone Snapshot
+
+      - name: Render UI preview
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force shots | Out-Null
+          $exe = Get-ChildItem -Recurse build/Snapshot_artefacts -Filter Snapshot.exe | Select-Object -First 1
+          & $exe.FullName "$PWD/shots"
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item -Recurse "build/BassMaker_artefacts/Release/VST3/808 BASS MAKER.vst3" out/
+          Copy-Item "build/BassMaker_artefacts/Release/Standalone/808 BASS MAKER.exe" out/
+          Compress-Archive -Path out/* -DestinationPath 808-BASS-MAKER-Windows.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win
+          path: |
+            808-BASS-MAKER-Windows.zip
+            shots/*.png
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get JUCE
+        run: git clone --depth 1 --branch 8.0.10 https://github.com/juce-framework/JUCE.git JUCE
+
+      - name: Configure
+        run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+
+      - name: Build
+        run: cmake --build build --config Release --target BassMaker_VST3 BassMaker_AU BassMaker_Standalone -- -quiet
+
+      - name: Package
+        run: |
+          mkdir out
+          cp -R "build/BassMaker_artefacts/Release/VST3/808 BASS MAKER.vst3" out/
+          cp -R "build/BassMaker_artefacts/Release/AU/808 BASS MAKER.component" out/
+          cp -R "build/BassMaker_artefacts/Release/Standalone/808 BASS MAKER.app" out/
+          for b in out/*; do codesign --force --deep --sign - "$b"; done
+          lipo -info "out/808 BASS MAKER.vst3/Contents/MacOS/808 BASS MAKER"
+          cat > out/README.txt <<'TXT'
+          808 BASS MAKER for macOS (Apple Silicon + Intel)
+
+          1. Copy "808 BASS MAKER.vst3"      to  /Library/Audio/Plug-Ins/VST3/
+             Copy "808 BASS MAKER.component" to  /Library/Audio/Plug-Ins/Components/
+          2. Open Terminal and run (removes the "downloaded from internet" block):
+             sudo xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/808 BASS MAKER.vst3" "/Library/Audio/Plug-Ins/Components/808 BASS MAKER.component"
+          3. Rescan plugins in your DAW.
+          TXT
+          ditto -c -k --sequesterRsrc out 808-BASS-MAKER-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: 808-BASS-MAKER-macOS.zip
+
+  publish:
+    needs: [windows, mac]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: Publish to builds branch
+        run: |
+          mkdir pub
+          find art -name '*.zip' -exec cp {} pub/ \;
+          find art -name '*.png' -exec cp {} pub/ \;
+          ls pub
+          cd pub
+          git init -q -b builds
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Build ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" builds
