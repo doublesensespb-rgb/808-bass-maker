@@ -1157,6 +1157,7 @@ void AmpEditor::mouseUp (const MouseEvent&)
 }
 
 // ================================================================ editor
+static constexpr int kCtrlX = 378;   // x of the LFO / ADSR controls inside the MODULATION panel
 BassEditor::BassEditor (BassProcessor& p)
     : AudioProcessorEditor (p), proc (p), screen (p), presetBar (p),
       noisePicker (p, ParamID::noiseType, [] { StringArray a; for (int i = 0; i < bass::kNumNoises; ++i) a.add (bass::noiseNames()[i]); return a; }(), true),
@@ -1372,10 +1373,10 @@ void BassEditor::paint (Graphics& g)
     g.setFont (font (10.0f, 0.14f));
     if (selectedLfo < kNumLfos)
     {
-        g.drawText ("SHAPE",    x0 + 306, y0 + 36, 90, 14, Justification::left, false);
-        g.drawText ("MODE",     x0 + 306, y0 + 90, 90, 14, Justification::left, false);
-        g.drawText ("DIVISION", x0 + 404, y0 + 36, 90, 14, Justification::left, false);
-        g.drawText ("TEMPO",    x0 + 404, y0 + 90, 90, 14, Justification::left, false);
+        g.drawText ("SHAPE",    x0 + kCtrlX,      y0 + 36, 80, 14, Justification::left, false);
+        g.drawText ("MODE",     x0 + kCtrlX,      y0 + 90, 80, 14, Justification::left, false);
+        g.drawText ("DIVISION", x0 + kCtrlX + 86, y0 + 36, 80, 14, Justification::left, false);
+        g.drawText ("TEMPO",    x0 + kCtrlX + 86, y0 + 90, 80, 14, Justification::left, false);
     }
     else
     {
@@ -1384,7 +1385,7 @@ void BassEditor::paint (Graphics& g)
         g.setFont (font (10.0f, 0.06f));
         g.drawFittedText (on ? "VOLUME FOLLOWS THE ADSR WHILE THE KEY IS HELD. LENGTH STILL SETS THE DROP."
                              : "ADSR IS OFF: THE 808 USES ITS LENGTH TAIL. CLICK THE LIGHT ON THE TAB TO SWITCH IT ON.",
-                          x0 + 306, y0 + 150, lfoPanel.getWidth() - 318, 40, Justification::centredLeft, 3);
+                          x0 + kCtrlX, y0 + 150, lfoPanel.getWidth() - kCtrlX - 12, 40, Justification::centredLeft, 3);
     }
 }
 
@@ -1412,8 +1413,8 @@ void BassEditor::resized()
         x += w;
     }
 
-    noisePanel = { 20, 494, 266, 206 };
-    lfoPanel = { 298, 494, W - 20 - 298, 206 };
+    noisePanel = { 20, 494, 228, 206 };
+    lfoPanel = { 260, 494, W - 20 - 260, 206 };
 
     noisePicker.setBounds (noisePanel.getX() + 14, noisePanel.getY() + 40, noisePanel.getWidth() - 28, 28);
     const int nkw = (noisePanel.getWidth() - 20) / 3;
@@ -1423,22 +1424,23 @@ void BassEditor::resized()
     const int lx = lfoPanel.getX(), ly = lfoPanel.getY() + 22;
     ampTab.setBounds (lx + 12, ly + 10, 84, 30);
     for (int l = 0; l < kNumLfos; ++l) lfoTabs[(size_t) l]->setBounds (lx + 12, ly + 46 + l * 36, 84, 30);
-    lfoEditor.setBounds (lx + 104, ly + 16, 192, 158);
+    lfoEditor.setBounds (lx + 104, ly + 18, 262, 150);   // wide rectangle, not a square
     ampEditor.setBounds (lfoEditor.getBounds());
+    const int c0 = lx + kCtrlX;
     {
-        const int aw = (lfoPanel.getWidth() - 306 - 14) / 4;
-        for (int i = 0; i < 4; ++i) ampKnobs[(size_t) i]->setBounds (lx + 300 + i * aw, ly + 14, aw, 100);
+        const int aw = (lfoPanel.getRight() - 10 - c0 + 6) / 4;
+        for (int i = 0; i < 4; ++i) ampKnobs[(size_t) i]->setBounds (c0 - 6 + i * aw, ly + 14, aw, 100);
     }
     for (auto& cp : lfoControls)
     {
         auto& c = *cp;
-        c.preset.setBounds (lx + 306, ly + 30, 90, 28);
-        c.mode.setBounds (lx + 306, ly + 84, 90, 28);
-        c.div.setBounds (lx + 404, ly + 30, 90, 28);
-        c.sync.setBounds (lx + 404, ly + 84, 90, 28);
-        c.remove.setBounds (lx + 306, ly + 140, 188, 28);
-        c.rate->setBounds (lx + 500, ly + 4, lfoPanel.getWidth() - 506, 86);
-        c.rise->setBounds (lx + 500, ly + 92, lfoPanel.getWidth() - 506, 86);
+        c.preset.setBounds (c0, ly + 30, 80, 28);
+        c.mode.setBounds (c0, ly + 84, 80, 28);
+        c.div.setBounds (c0 + 86, ly + 30, 80, 28);
+        c.sync.setBounds (c0 + 86, ly + 84, 80, 28);
+        c.remove.setBounds (c0, ly + 140, 166, 28);
+        c.rate->setBounds (c0 + 170, ly + 4, lfoPanel.getRight() - 6 - (c0 + 170), 86);
+        c.rise->setBounds (c0 + 170, ly + 92, lfoPanel.getRight() - 6 - (c0 + 170), 86);
     }
     refreshAllMods();
 }
