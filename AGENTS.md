@@ -109,6 +109,11 @@ Workflow loop:
 6. LOOK at the PNGs (rendered on Windows by CI), fix anything broken.
 7. Rename zips with the version, send them with a short summary.
 
+If the `mac` job is cancelled with "The job was not acquired by Runner of type hosted even after multiple attempts"
+("capacity constraints ... macOS arm64"), it is GitHub's Mac capacity, not the code (seen 2 Nov 2026, also in many other
+public repos). Re-run failed jobs later; if it keeps failing, switch `runs-on: macos-latest` to `macos-15-intel`
+(still builds universal arm64+x86_64) after asking the owner. As of 2 Nov 2026 the 0.13 mac zip has NOT been built yet.
+
 Install, Windows: replace `808 BASS MAKER.vst3` in `C:\Program Files\Common Files\VST3`, rescan in FL Studio.
 Mac: `README.txt` inside the mac zip (copy to `/Library/Audio/Plug-Ins/...`, remove quarantine with `xattr`).
 
