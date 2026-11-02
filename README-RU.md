@@ -144,9 +144,10 @@ OpenAI Codex (https://openai.com/codex), Cursor (https://cursor.com) и т. п. 
 
 - **Mac-сборка снята с ошибкой «The job was not acquired by Runner of type hosted» / «capacity constraints».**
   Это не ошибка кода: у GitHub не хватает Mac-серверов (так бывает у многих проектов). Что делать:
-  Actions → открыть этот запуск → **Re-run failed jobs** позже (утром обычно свободнее). Если не помогает несколько раз —
-  в `.github/workflows/build.yml` у задачи `mac` заменить `runs-on: macos-latest` на `runs-on: macos-15-intel`
-  и запустить сборку заново (плагин всё равно соберётся универсальным: Apple Silicon + Intel).
+  С 3 ноября 2026 автосборка по умолчанию собирает Mac на Intel-сервере (`macos-15-intel`, как в GRAIN FORM) —
+  там очередь свободнее, плагин всё равно универсальный (Apple Silicon + Intel). При запуске Run workflow можно выбрать
+  `target`: all / windows / mac (только одну платформу) и `mac_runner` (например `macos-latest`). Если и так не
+  собралось — Actions → открыть запуск → **Re-run failed jobs** позже.
 
 - **FL показывает старую версию.** Удали старый `808 BASS MAKER.vst3` из `C:\Program Files\Common Files\VST3`,
   положи новый и пересканируй плагины в FL.

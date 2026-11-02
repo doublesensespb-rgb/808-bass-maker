@@ -3,12 +3,22 @@ name: Build
 # Builds run only when started by hand (gh workflow run build.yml), after the owner approves the changes.
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "What to build"
+        type: choice
+        options: [all, windows, mac]
+        default: all
+      mac_runner:
+        description: "macOS runner (macos-15-intel avoids the busy Apple Silicon queue)"
+        default: macos-15-intel
 
 permissions:
   contents: write
 
 jobs:
   windows:
+    if: inputs.target != 'mac'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +56,8 @@ jobs:
             shots/*.png
 
   mac:
-    runs-on: macos-latest
+    if: inputs.target != 'windows'
+    runs-on: ${{ inputs.mac_runner || 'macos-15-intel' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -93,7 +104,9 @@ jobs:
           path: art
       - name: Publish to builds branch
         run: |
-          mkdir pub
+          # keep what is already on the builds branch, replace only what was built now
+          git clone --depth 1 --branch builds "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" pub || mkdir pub
+          rm -rf pub/.git
           find art -name '*.zip' -exec cp {} pub/ \;
           find art -name '*.png' -exec cp {} pub/ \;
           ls pub
