@@ -20,6 +20,12 @@ namespace ParamID
     inline constexpr const char* noiseTail = "noiseTail";
     inline constexpr const char* noiseType = "noiseType";
     inline constexpr const char* distType  = "distType";
+    inline constexpr const char* pitch     = "pitch";      // since 0.13
+    inline constexpr const char* ampOn     = "ampOn";      // ADSR amp (same IDs as GRAIN FORM)
+    inline constexpr const char* ampA      = "ampA";
+    inline constexpr const char* ampD      = "ampD";
+    inline constexpr const char* ampS      = "ampS";
+    inline constexpr const char* ampR      = "ampR";
     // LFOs (same scheme as GRAIN FORM): "lfo1Rate", "lfo1Sync", "lfo1Div", "lfo1Mode", "lfo1Rise", "lfo1On"
     inline juce::String lfo (int index, const char* what) { return "lfo" + juce::String (index + 1) + what; }
 }
@@ -35,6 +41,7 @@ enum ModTarget
     mtClick, mtPunch, mtDrop, mtPower, mtLength, mtDrive, mtFm, mtOutput,
     mtNoise, mtNoiseTone, mtNoiseTail,
     mtLfo1Rate, mtLfo2Rate, mtLfo3Rate,
+    mtPitch,
     kNumModTargets
 };
 
@@ -150,6 +157,7 @@ private:
 
     std::atomic<float>* pNoiseType {};
     std::atomic<float>* pDistType {};
+    std::atomic<float>* pAmpOn {}; std::atomic<float>* pAmpA {}; std::atomic<float>* pAmpD {}; std::atomic<float>* pAmpS {}; std::atomic<float>* pAmpR {};
     std::array<std::atomic<float>*, kNumLfos> pLfoSync {}, pLfoDiv {}, pLfoMode {}, pLfoRise {}, pLfoOn {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BassProcessor)

@@ -6,7 +6,8 @@ using namespace juce;
 static const char* const kModTargetIds[kNumModTargets] = {
     ParamID::click, ParamID::punch, ParamID::drop, ParamID::power, ParamID::length, ParamID::drive, ParamID::fm, ParamID::output,
     ParamID::noise, ParamID::noiseTone, ParamID::noiseTail,
-    "lfo1Rate", "lfo2Rate", "lfo3Rate"
+    "lfo1Rate", "lfo2Rate", "lfo3Rate",
+    ParamID::pitch
 };
 
 BassProcessor::BassProcessor()
@@ -20,6 +21,9 @@ BassProcessor::BassProcessor()
     }
     pNoiseType = apvts.getRawParameterValue (ParamID::noiseType);
     pDistType = apvts.getRawParameterValue (ParamID::distType);
+    pAmpOn = apvts.getRawParameterValue (ParamID::ampOn);
+    pAmpA = apvts.getRawParameterValue (ParamID::ampA); pAmpD = apvts.getRawParameterValue (ParamID::ampD);
+    pAmpS = apvts.getRawParameterValue (ParamID::ampS); pAmpR = apvts.getRawParameterValue (ParamID::ampR);
     for (int l = 0; l < kNumLfos; ++l)
     {
         pLfoSync[(size_t) l] = apvts.getRawParameterValue (ParamID::lfo (l, "Sync"));
@@ -61,6 +65,24 @@ AudioProcessorValueTreeState::ParameterLayout BassProcessor::layout()
     StringArray dn;
     for (int i = 0; i < bass::kNumDists; ++i) dn.add (bass::distNames()[i]);
     ps.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::distType, 1 }, "Drive Type", dn, 0));
+
+    // global PITCH: semitones, 0 = two octaves below the played note (the knob snaps to semitones, LFOs sweep smoothly)
+    ps.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::pitch, 1 }, "Pitch", NormalisableRange<float> (-24.0f, 24.0f, 1.0f), 0.0f,
+                  AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+                  { const int st = roundToInt (v); return (st > 0 ? "+" : "") + String (st) + " st"; })));
+
+    // ADSR amp, as in GRAIN FORM. Off = the 808 LENGTH tail
+    auto msFmt = [] (float v, int) { return v >= 1000.0f ? String (v / 1000.0f, 2) + " s" : String (roundToInt (v)) + " ms"; };
+    auto skewMs = [] (float lo, float hi, float centre) { NormalisableRange<float> r (lo, hi); r.setSkewForCentre (centre); return r; };
+    ps.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamID::ampOn, 1 }, "Amp Envelope On", false));
+    ps.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::ampA, 1 }, "Amp Attack", skewMs (0.0f, 10000.0f, 300.0f), 1.0f,
+                  AudioParameterFloatAttributes().withStringFromValueFunction (msFmt)));
+    ps.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::ampD, 1 }, "Amp Decay", skewMs (1.0f, 10000.0f, 500.0f), 450.0f,
+                  AudioParameterFloatAttributes().withStringFromValueFunction (msFmt)));
+    ps.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::ampS, 1 }, "Amp Sustain", NormalisableRange<float> (0.0f, 1.0f), 0.7f,
+                  AudioParameterFloatAttributes().withStringFromValueFunction (pct)));
+    ps.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::ampR, 1 }, "Amp Release", skewMs (5.0f, 10000.0f, 600.0f), 150.0f,
+                  AudioParameterFloatAttributes().withStringFromValueFunction (msFmt)));
 
     auto secFmt = [] (float v, int) { return v < 0.01f ? String ("OFF") : String (v, 2) + " s"; };
     auto hzFmt  = [] (float v, int) { return String (v, v < 10.0f ? 2 : 1) + " Hz"; };
@@ -111,6 +133,9 @@ bass::Params BassProcessor::paramsFrom (const float* v) const
     p.noise = v[mtNoise]; p.noiseTone = v[mtNoiseTone]; p.noiseTail = v[mtNoiseTail];
     p.noiseType = (int) pNoiseType->load();
     p.distType = (int) pDistType->load();
+    p.pitch = v[mtPitch];
+    p.adsrOn = pAmpOn->load() > 0.5f;
+    p.attackMs = pAmpA->load(); p.decayMs = pAmpD->load(); p.sustain = pAmpS->load(); p.releaseMs = pAmpR->load();
     p.glide = 0.0f;   // GLIDE removed in 0.11
     return p;
 }
@@ -359,7 +384,13 @@ void BassProcessor::computeModulated (float* v)
     {
         auto* p = modParams[(size_t) t];
         const float norm = jlimit (0.0f, 1.0f, p->getValue() + off[t]);
-        v[t] = p->convertFrom0to1 (norm);
+        if (t == mtPitch)   // not snapped: an LFO on PITCH sweeps smoothly
+        {
+            const auto& r = p->getNormalisableRange();
+            v[t] = r.start + norm * (r.end - r.start);
+        }
+        else
+            v[t] = p->convertFrom0to1 (norm);
         modNorm[(size_t) t].store (norm, std::memory_order_relaxed);
     }
 }
@@ -428,6 +459,8 @@ void BassProcessor::loadFactory (int index)
     setParam (apvts, ParamID::noiseTone, p.noiseTone); setParam (apvts, ParamID::noiseTail, p.noiseTail);
     setParam (apvts, ParamID::noiseType, (float) p.noiseType);
     setParam (apvts, ParamID::distType, (float) p.distType);
+    setParam (apvts, ParamID::pitch, 0.0f);
+    setParam (apvts, ParamID::ampOn, 0.0f);
     clearModulations();
     for (int lf = 0; lf < kNumLfos; ++lf)
     {
@@ -543,8 +576,11 @@ void BassProcessor::setStateInformation (const void* data, int size)
     const auto ms = StringArray::fromTokens (st.getProperty ("mods").toString(), ";", "");
     std::array<String, kNumLfos> shapes;
     for (int l = 0; l < kNumLfos; ++l) shapes[(size_t) l] = st.getProperty ("lfoShape" + String (l + 1)).toString();
+    // sessions/presets from before 0.13 had no PITCH and played two octaves higher: keep their sound
+    const bool before013 = ! st.getChildWithProperty ("id", ParamID::pitch).isValid();
     apvts.replaceState (st);
     presetName = pn;
+    if (before013) { setParam (apvts, ParamID::pitch, 24.0f); setParam (apvts, ParamID::ampOn, 0.0f); }
 
     clearModulations();
     for (auto& entry : ms)

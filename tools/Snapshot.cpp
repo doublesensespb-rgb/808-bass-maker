@@ -78,6 +78,19 @@ int main (int argc, char** argv)
     save (ed, outDir, "ui-gut.png");
     p.keyboardState.noteOff (1, 33, 0.0f);
 
+    // ADSR amp switched on and selected, a held note in its sustain; PITCH +5
+    p.loadFactory (0);
+    p.clearModulations();
+    ed.refreshAllMods();
+    if (auto* x = p.apvts.getParameter (ParamID::ampOn)) x->setValueNotifyingHost (1.0f);
+    if (auto* x = p.apvts.getParameter (ParamID::pitch)) x->setValueNotifyingHost (x->convertTo0to1 (5.0f));
+    ed.selectLfo (3);
+    for (int i = 0; i < 20; ++i) frame (p, ed);
+    p.keyboardState.noteOn (1, 60, 1.0f);
+    for (int i = 0; i < 40; ++i) frame (p, ed);
+    save (ed, outDir, "ui-adsr.png");
+    p.keyboardState.noteOff (1, 60, 0.0f);
+
     base.reset();
     return 0;
 }

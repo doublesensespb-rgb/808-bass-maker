@@ -34,7 +34,12 @@ struct Params
     float noiseTail = 0.35f; // only the attack .. the whole tail
     int   noiseType = 0;     // see noiseNames()
     int   distType  = 0;     // see distNames()
+    float pitch     = 0.0f;  // global pitch, semitones (-24..+24). 0 = two octaves below the played note
+    bool  adsrOn    = false; // ADSR amp (as in GRAIN FORM). Off = the 808 LENGTH tail
+    float attackMs  = 1.0f, decayMs = 450.0f, sustain = 0.7f, releaseMs = 150.0f;
 };
+
+constexpr double kBaseOctaveShift = -24.0;   // since 0.13 the plugin plays two octaves lower
 
 inline const char* const* distNames()
 {
@@ -73,6 +78,23 @@ inline double ampShape (const Params& p, double t)
     const double L = tailSeconds (p);
     const double x = std::fmax (0.0, 1.0 - (t - atk) / L);
     return std::pow (x, 1.0 + 0.4 * (1.0 - p.power));   // Serum patch: linear volume ramp; less POWER = a bit shorter feel
+}
+
+// ADSR level (no release) at time t
+inline double adsrHold (const Params& p, double t)
+{
+    const double a = std::fmax (0.0001, p.attackMs * 0.001), d = std::fmax (0.001, p.decayMs * 0.001);
+    if (t < a) return t / a;
+    return p.sustain + (1.0 - p.sustain) * std::exp (-4.6 * (t - a) / d);
+}
+
+// the volume shape the screen draws: LENGTH tail, or ADSR held for 65% of the window then released
+inline double envShape (const Params& p, double t, double window)
+{
+    if (! p.adsrOn) return ampShape (p, t);
+    const double off = window * 0.65;
+    if (t < off) return adsrHold (p, t);
+    return adsrHold (p, off) * std::exp (-6.9 * (t - off) / std::fmax (0.005, p.releaseMs * 0.001));
 }
 
 // pitch offset in semitones at time t after note-on
@@ -257,7 +279,8 @@ public:
     std::atomic<float> vizLevel { 0.0f };    // output peak of the last block
     std::atomic<float> vizSub { 0.0f };      // clean-sub peak of the last block
     std::atomic<float> vizVelocity { 0.0f };
-    std::atomic<int> vizHits { 0 };          // increments on every note start
+    std::atomic<int> vizHits { 0 };
+    std::atomic<int> vizAdsrStage { 0 };     // 0 idle, 1 attack, 2 decay/sustain, 3 release          // increments on every note start
     std::atomic<double> vizNoteTime { 99.0 };  // seconds since the last note start
 
     void prepare (double sampleRate)
@@ -279,7 +302,7 @@ public:
     {
         subLo.reset(); dirtHi.reset(); hiCut.reset(); noiseHp.reset(); dcBlock.reset(); fmHp.reset(); fmLp1.reset(); fmLp2.reset(); noiseLp = 0;
         d1.reset(); d2a.reset(); d2b.reset();
-        stackSize = 0; gate = false; rel = 0; phase = 0; t = 99; curNote = targetNote = 36;
+        stackSize = 0; gate = false; rel = 0; phase = 0; t = 99; curNote = targetNote = 36; adsrStage = 0; adsrLevel = 0;
     }
 
     void setParams (const Params& np) { p = np; }
@@ -299,6 +322,7 @@ public:
         t = 0.0;              // Serum patch has LEGATO off: envelopes retrigger on every note
         gate = true;
         rel = 1.0;
+        adsrStage = 1;   // attack from the current level: no click on retrigger
         vizHits.fetch_add (1);
         vizVelocity.store (velocity);
     }
@@ -323,6 +347,10 @@ public:
         const double dtO = 1.0 / osr;
         const double glideCoef = glideSeconds (p) > 0.0005 ? std::exp (-dtO / (glideSeconds (p) / 3.0)) : 0.0;
         const double relCoef = std::exp (-dtO / 0.005);    // Serum ENV1 release 15 ms
+        const double atkInc = dtO / std::fmax (0.0001, p.attackMs * 0.001);
+        const double decCoef = std::exp (-4.6 * dtO / std::fmax (0.001, p.decayMs * 0.001));
+        const double adsrRelCoef = std::exp (-6.9 * dtO / std::fmax (0.005, p.releaseMs * 0.001));
+        const double sus = std::fmin (1.0, std::fmax (0.0, (double) p.sustain));
         const double gD = driveGain (p), mix = driveMix (p);
         const double subGain = 1.0 + 0.5 * p.power;
         const double clipIn = std::pow (10.0, (p.power * 8.0) / 20.0);
@@ -343,15 +371,31 @@ public:
                 for (int j = 0; j < 2; ++j)
                 {
                     curNote = targetNote + (curNote - targetNote) * glideCoef;
-                    if (! gate) rel *= relCoef;
-                    const double a = ampShape (p, t) * rel * (0.55 + 0.45 * vel);
-                    const double hz = 440.0 * std::pow (2.0, (curNote - 69.0 + bend + pitchShape (p, t)) / 12.0);
+                    double env;
+                    if (p.adsrOn)
+                    {
+                        // ADSR amp (GRAIN FORM): linear attack, exponential decay and release
+                        if (! gate && adsrStage != 0) adsrStage = 3;
+                        if (adsrStage == 1)      { adsrLevel += atkInc; if (adsrLevel >= 1.0) { adsrLevel = 1.0; adsrStage = 2; } }
+                        else if (adsrStage == 2) adsrLevel = sus + (adsrLevel - sus) * decCoef;
+                        else if (adsrStage == 3) adsrLevel *= adsrRelCoef;
+                        env = adsrLevel;
+                        rel = 1.0;
+                    }
+                    else
+                    {
+                        if (! gate) rel *= relCoef;
+                        env = ampShape (p, t) * rel;
+                        adsrLevel = env;
+                    }
+                    const double a = env * (0.55 + 0.45 * vel);
+                    const double hz = 440.0 * std::pow (2.0, (curNote - 69.0 + kBaseOctaveShift + p.pitch + bend + pitchShape (p, t)) / 12.0);
                     phase += hz * dtO;
                     phase -= std::floor (phase);
                     const double th = 2.0 * kPi * phase;
                     const double unit = std::sin (th);
                     const double s = unit * a;
-                    const double shape = ampShape (p, t);
+                    const double shape = p.adsrOn ? env : ampShape (p, t);
 
                     // NOISE goes INTO the drive with the sine: it gets crushed into crunch instead of hissing on top.
                     // It breathes with the wave (louder on the crests) and with the tail (Serum: LFO 5 -> Noise).
@@ -397,7 +441,8 @@ public:
         }
         peakAcc = std::fmax (peakAcc, peak);
         subAcc = std::fmax (subAcc, subPeak);
-        vizAmp.store ((float) (ampShape (p, t) * rel));
+        vizAmp.store ((float) (p.adsrOn ? adsrLevel : ampShape (p, t) * rel));
+        vizAdsrStage.store (adsrLevel < 0.001 && adsrStage == 3 ? 0 : adsrStage);
         vizNoteTime.store (t);
     }
 
@@ -427,6 +472,8 @@ private:
     double phase = 0, t = 99, curNote = 36, targetNote = 36, bend = 0, rel = 0;
     float vel = 1.0f;
     bool gate = false;
+    int adsrStage = 0;        // 0 idle, 1 attack, 2 decay/sustain, 3 release
+    double adsrLevel = 0.0;
     std::array<int, 16> stack {};
     int stackSize = 0;
     uint32_t rng = 12345;

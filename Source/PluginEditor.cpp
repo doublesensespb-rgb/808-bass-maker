@@ -304,6 +304,8 @@ void WaveScreen::rebuildShape()
     const auto p = proc.modulatedParams();
     power = p.power;
     windowSec = bass::tailSeconds (p) * 1.08 + 0.02;
+    if (p.adsrOn)   // ADSR: attack + decay in the first half, sustain, then the release fits in the last third
+        windowSec = jlimit (0.4, 4.0, jmax ((p.attackMs + p.decayMs) * 0.001 / 0.5, p.releaseMs * 0.001 / 0.33, 0.5));
 
     // stretched time axis (t = u^2) so CLICK and PUNCH are visible; pitch drawn softened so the sine stays readable
     std::array<double, NS> vf {};
@@ -321,7 +323,7 @@ void WaveScreen::rebuildShape()
     {
         const double u = i / (double) (NS - 1), t = windowSec * u * u;
         ph += vf[(size_t) i] * k;
-        const double a = bass::ampShape (p, t);
+        const double a = bass::envShape (p, t, windowSec);
         double s = std::sin (ph) + 0.35 * p.fm * bass::fmPart (ph, bass::fmIndex (p, a));   // FM squeak = ripples on the sine
         s = jlimit (-1.0, 1.0, s);
         wave[(size_t) i] = (float) ((s < 0 ? -1.0 : 1.0) * std::pow (std::abs (s), q) * a);
@@ -981,25 +983,212 @@ void LfoEditor::paint (Graphics& g)
     g.drawText (rate, r.reduced (10.0f, 4.0f), Justification::topRight, false);
 }
 
+// ================================================================ ADSR (from GRAIN FORM)
+AmpTab::AmpTab() { setTooltip ("ADSR amp: the volume envelope of every note.\nClick the light to switch it on/off (off = the 808 LENGTH tail)."); }
+
+void AmpTab::paint (Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f);
+    const auto col = C::accent;
+    const bool on = param != nullptr && param->getValue() > 0.5f;
+    g.setColour (selected ? C::button.brighter (0.08f) : C::button);
+    g.fillRoundedRectangle (r, 6.0f);
+    if (selected)
+    {
+        g.setColour (col);
+        g.drawRoundedRectangle (r.reduced (0.5f), 6.0f, 1.2f);
+    }
+    const auto led = Rectangle<float> (8.0f, 8.0f).withCentre ({ r.getX() + 12.0f, r.getCentreY() });
+    if (on) { g.setColour (col); g.fillEllipse (led); }
+    else    { g.setColour (col.withAlpha (0.45f)); g.drawEllipse (led.reduced (0.5f), 1.2f); }
+    g.setColour ((selected ? Colours::white : C::text).withAlpha (on ? 1.0f : 0.5f));
+    g.setFont (font (11.5f, 0.1f, true));
+    g.drawText ("ADSR", r.withTrimmedLeft (22.0f), Justification::centredLeft, false);
+    g.setFont (font (9.5f, 0.08f));
+    g.drawText ("amp", r.withTrimmedLeft (58.0f), Justification::centredLeft, false);
+}
+
+void AmpTab::mouseMove (const MouseEvent& e) { setMouseCursor (e.position.x < 22.0f ? MouseCursor::NormalCursor : MouseCursor::PointingHandCursor); }
+
+void AmpTab::mouseDown (const MouseEvent& e)
+{
+    if (e.position.x < 22.0f && param != nullptr)
+    {
+        param->beginChangeGesture();
+        param->setValueNotifyingHost (param->getValue() > 0.5f ? 0.0f : 1.0f);
+        param->endChangeGesture();
+        repaint();
+    }
+    if (onSelect) onSelect();
+}
+
+AmpEditor::AmpEditor (BassProcessor& p) : proc (p)
+{
+    setTooltip ("ADSR = the volume of every note.\nDrag the points: attack peak, decay / sustain corner, release end.");
+}
+
+float AmpEditor::value (const char* id) const { return proc.apvts.getRawParameterValue (id)->load(); }
+void AmpEditor::setValue (const char* id, float v) { if (auto* p = proc.apvts.getParameter (id)) p->setValueNotifyingHost (p->convertTo0to1 (v)); }
+
+static float envSeg (float ms, float maxMs, float maxW) { return jmax (4.0f, maxW * std::log1p (ms / 5.0f) / std::log1p (maxMs / 5.0f)); }
+static float envTime (float w, float maxMs, float maxW) { return 5.0f * std::expm1 (jlimit (0.0f, 1.0f, w / maxW) * std::log1p (maxMs / 5.0f)); }
+
+AmpEditor::Geo AmpEditor::geometry() const
+{
+    Geo g;
+    g.a = getLocalBounds().toFloat().reduced (12.0f, 10.0f).withTrimmedTop (8.0f);
+    g.maxW = g.a.getWidth() * 0.27f;
+    g.plateau = g.a.getWidth() * 0.17f;
+    const float top = g.a.getY(), bot = g.a.getBottom(), h = g.a.getHeight();
+    g.p0 = { g.a.getX(), bot };
+    g.p1 = { g.p0.x + envSeg (value (ParamID::ampA), 10000.0f, g.maxW), top };
+    g.p2 = { g.p1.x + envSeg (value (ParamID::ampD), 10000.0f, g.maxW), top + (1.0f - value (ParamID::ampS)) * h };
+    g.p3 = { g.p2.x + g.plateau, g.p2.y };
+    g.p4 = { g.p3.x + envSeg (value (ParamID::ampR), 10000.0f, g.maxW), bot };
+    return g;
+}
+
+void AmpEditor::paint (Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (C::screen);
+    g.fillRoundedRectangle (r, 8.0f);
+    const auto geo = geometry();
+    const bool on = value (ParamID::ampOn) > 0.5f;
+    const auto col = C::accent.withMultipliedAlpha (on ? 1.0f : 0.4f);
+
+    g.setColour (Colours::white.withAlpha (0.05f));
+    g.drawHorizontalLine ((int) geo.a.getBottom(), geo.a.getX(), geo.a.getRight());
+
+    Path p;
+    p.startNewSubPath (geo.p0);
+    p.quadraticTo ({ geo.p0.x + (geo.p1.x - geo.p0.x) * 0.55f, geo.p1.y + (geo.p0.y - geo.p1.y) * 0.25f }, geo.p1);
+    auto expSeg = [&p] (Point<float> a, Point<float> b)
+    {
+        for (int i = 1; i <= 24; ++i)
+        {
+            const float t = (float) i / 24.0f;
+            const float k = (1.0f - std::exp (-4.0f * t)) / (1.0f - std::exp (-4.0f));
+            p.lineTo (a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * k);
+        }
+    };
+    expSeg (geo.p1, geo.p2);
+    p.lineTo (geo.p3);
+    expSeg (geo.p3, geo.p4);
+
+    Path fill (p);
+    fill.lineTo (geo.p4.x, geo.a.getBottom());
+    fill.lineTo (geo.p0);
+    fill.closeSubPath();
+    g.setColour (col.withAlpha (0.12f));
+    g.fillPath (fill);
+    g.setColour (col);
+    g.strokePath (p, PathStrokeType (1.8f, PathStrokeType::curved, PathStrokeType::rounded));
+
+    g.setColour (C::dim);
+    g.setFont (font (10.0f, 0.06f));
+    g.drawText (on ? "VOLUME" : "OFF", r.reduced (10.0f, 4.0f), Justification::topRight, false);
+
+    const Point<float> hs[3] = { geo.p1, geo.p2, geo.p4 };
+    for (int i = 0; i < 3; ++i)
+    {
+        const bool hot = hover == i || dragging == i;
+        g.setColour (col.withAlpha (0.3f));
+        g.fillEllipse (Rectangle<float> (hot ? 16.0f : 12.0f, hot ? 16.0f : 12.0f).withCentre (hs[i]));
+        g.setColour (Colours::white.withAlpha (on ? 1.0f : 0.5f));
+        g.fillEllipse (Rectangle<float> (6.0f, 6.0f).withCentre (hs[i]));
+    }
+
+    // live dot: where the note is on its envelope right now
+    const int st = proc.engine.vizAdsrStage.load();
+    const float lv = proc.engine.vizAmp.load();
+    if (on && st > 0)
+    {
+        const float S = value (ParamID::ampS);
+        Point<float> d;
+        if (st == 1)      d = { geo.p0.x + (geo.p1.x - geo.p0.x) * lv, geo.a.getBottom() - geo.a.getHeight() * lv };
+        else if (st == 2) d = { geo.p1.x + (geo.p2.x - geo.p1.x) * jlimit (0.0f, 1.0f, (1.0f - lv) / jmax (0.001f, 1.0f - S)), geo.a.getBottom() - geo.a.getHeight() * lv };
+        else              d = { geo.p3.x + (geo.p4.x - geo.p3.x) * jlimit (0.0f, 1.0f, 1.0f - lv / jmax (0.001f, S)), geo.a.getBottom() - geo.a.getHeight() * lv };
+        g.setColour (Colours::white);
+        g.fillEllipse (Rectangle<float> (5.0f, 5.0f).withCentre (d));
+    }
+}
+
+void AmpEditor::mouseMove (const MouseEvent& e)
+{
+    const auto geo = geometry();
+    const Point<float> hs[3] = { geo.p1, geo.p2, geo.p4 };
+    int h = -1;
+    for (int i = 0; i < 3; ++i) if (hs[i].getDistanceFrom (e.position) < 12.0f) h = i;
+    if (h != hover) { hover = h; setMouseCursor (h >= 0 ? MouseCursor::DraggingHandCursor : MouseCursor::NormalCursor); }
+}
+
+void AmpEditor::mouseDown (const MouseEvent& e)
+{
+    mouseMove (e);
+    dragging = hover;
+    const char* ids[3][2] = { { ParamID::ampA, nullptr }, { ParamID::ampD, ParamID::ampS }, { ParamID::ampR, nullptr } };
+    if (dragging >= 0)
+        for (auto* id : ids[dragging]) if (id != nullptr) if (auto* p = proc.apvts.getParameter (id)) p->beginChangeGesture();
+}
+
+void AmpEditor::mouseDrag (const MouseEvent& e)
+{
+    if (dragging < 0) return;
+    const auto geo = geometry();
+    if (dragging == 0)
+        setValue (ParamID::ampA, jlimit (0.0f, 10000.0f, envTime (e.position.x - geo.p0.x - 4.0f, 10000.0f, geo.maxW)));
+    else if (dragging == 1)
+    {
+        setValue (ParamID::ampD, jlimit (1.0f, 10000.0f, envTime (e.position.x - geo.p1.x, 10000.0f, geo.maxW)));
+        setValue (ParamID::ampS, jlimit (0.0f, 1.0f, (geo.a.getBottom() - e.position.y) / geo.a.getHeight()));
+    }
+    else
+        setValue (ParamID::ampR, jlimit (5.0f, 10000.0f, envTime (e.position.x - geo.p3.x, 10000.0f, geo.maxW)));
+    repaint();
+}
+
+void AmpEditor::mouseUp (const MouseEvent&)
+{
+    const char* ids[3][2] = { { ParamID::ampA, nullptr }, { ParamID::ampD, ParamID::ampS }, { ParamID::ampR, nullptr } };
+    if (dragging >= 0)
+        for (auto* id : ids[dragging]) if (id != nullptr) if (auto* p = proc.apvts.getParameter (id)) p->endChangeGesture();
+    dragging = -1;
+}
+
 // ================================================================ editor
 BassEditor::BassEditor (BassProcessor& p)
     : AudioProcessorEditor (p), proc (p), screen (p), presetBar (p),
       noisePicker (p, ParamID::noiseType, [] { StringArray a; for (int i = 0; i < bass::kNumNoises; ++i) a.add (bass::noiseNames()[i]); return a; }(), true),
       drivePicker (p, ParamID::distType, [] { StringArray a; for (int i = 0; i < bass::kNumDists; ++i) a.add (bass::distNames()[i]); return a; }(), false),
-      lfoEditor (p)
+      lfoEditor (p), ampEditor (p)
 {
     setLookAndFeel (&look);
     auto& s = proc.apvts;
-    for (auto* c : std::initializer_list<Component*> { &screen, &subMeter, &outMeter, &presetBar, &randomButton, &noisePicker, &drivePicker, &lfoEditor })
+    for (auto* c : std::initializer_list<Component*> { &screen, &subMeter, &outMeter, &presetBar, &randomButton, &noisePicker, &drivePicker, &lfoEditor, &ampTab })
         addAndMakeVisible (c);
+    addChildComponent (ampEditor);
 
-    for (auto [id, nm] : { std::pair<const char*, const char*> { ParamID::click, "CLICK" }, { ParamID::punch, "PUNCH" }, { ParamID::drop, "DROP" },
-                           { ParamID::power, "POWER" }, { ParamID::length, "LENGTH" }, { ParamID::drive, "DRIVE" }, { ParamID::fm, "FM" } })
+    for (auto [id, nm] : { std::pair<const char*, const char*> { ParamID::pitch, "PITCH" }, { ParamID::click, "CLICK" }, { ParamID::punch, "PUNCH" },
+                           { ParamID::drop, "DROP" }, { ParamID::power, "POWER" }, { ParamID::length, "LENGTH" }, { ParamID::drive, "DRIVE" },
+                           { ParamID::fm, "FM" } })
     {
         mainKnobs.push_back (std::make_unique<Knob> (proc, id, nm, String (id) == ParamID::power ? Knob::Size::Big : Knob::Size::Normal));
         addAndMakeVisible (*mainKnobs.back());
+        if (String (id) == ParamID::power) powerKnob = mainKnobs.back().get();
+        if (String (id) == ParamID::drive) driveKnob = mainKnobs.back().get();
     }
     mainKnobs.back()->slider.setTooltip ("FM: odd harmonics in the low-mids, a stylish squeak on top of the bass");
+    mainKnobs.front()->slider.setTooltip ("PITCH: the whole 808 up or down in semitones (0 = two octaves below the key you play)");
+
+    ampTab.param = proc.apvts.getParameter (ParamID::ampOn);
+    ampTab.onSelect = [this] { selectLfo (3); };
+    for (auto [id, nm] : { std::pair<const char*, const char*> { ParamID::ampA, "ATTACK" }, { ParamID::ampD, "DECAY" },
+                           { ParamID::ampS, "SUSTAIN" }, { ParamID::ampR, "RELEASE" } })
+    {
+        ampKnobs.push_back (std::make_unique<Knob> (proc, id, nm, Knob::Size::Small));
+        addChildComponent (*ampKnobs.back());
+    }
     for (auto [id, nm] : { std::pair<const char*, const char*> { ParamID::noise, "AMOUNT" }, { ParamID::noiseTone, "TONE" }, { ParamID::noiseTail, "TAIL" } })
     {
         noiseKnobs.push_back (std::make_unique<Knob> (proc, id, nm, Knob::Size::Small));
@@ -1067,6 +1256,13 @@ BassEditor::~BassEditor()
 void BassEditor::selectLfo (int i)
 {
     selectedLfo = i;
+    const bool amp = i == 3;
+    ampTab.selected = amp;
+    ampTab.repaint();
+    ampEditor.setVisible (amp);
+    lfoEditor.setVisible (! amp);
+    for (auto& k : ampKnobs) k->setVisible (amp);
+    repaint();
     for (int l = 0; l < kNumLfos; ++l)
     {
         lfoTabs[(size_t) l]->selected = (l == i);
@@ -1076,7 +1272,7 @@ void BassEditor::selectLfo (int i)
                                  (Component*) &c.remove, (Component*) c.rate.get(), (Component*) c.rise.get() })
             comp->setVisible (l == i);
     }
-    lfoEditor.setLfo (i);
+    if (! amp) lfoEditor.setLfo (i);
 }
 
 void BassEditor::refreshAllMods()
@@ -1089,7 +1285,7 @@ void BassEditor::refreshAllMods()
 void BassEditor::afterPresetLoad()
 {
     animT = 1.0f;
-    lfoEditor.setLfo (selectedLfo);
+    if (selectedLfo < kNumLfos) lfoEditor.setLfo (selectedLfo);
     refreshAllMods();
     presetBar.repaint();
 }
@@ -1133,7 +1329,10 @@ void BassEditor::tick (float dt)
     for (auto& k : noiseKnobs) k->tick();
     for (auto& c : lfoControls) { c->rate->tick(); c->rise->tick(); }
     for (auto& t : lfoTabs) t->repaint();
-    lfoEditor.tick();
+    ampTab.repaint();
+    if (ampEditor.isVisible()) ampEditor.repaint();
+    for (auto& k : ampKnobs) if (k->isVisible()) k->repaint();
+    if (lfoEditor.isVisible()) lfoEditor.tick();
     noisePicker.repaint();
     drivePicker.repaint();
 }
@@ -1151,7 +1350,7 @@ void BassEditor::paint (Graphics& g)
     g.drawText ("HEAVY 808 DESIGNER", 34, 54, 360, 16, Justification::topLeft, false);
     g.setColour (C::faint);
     g.setFont (font (10.0f, 0.1f));
-    g.drawText ("v0.12", presetBar.getRight() - 40, presetBar.getBottom() + 4, 40, 12, Justification::right, false);
+    g.drawText ("v0.13", presetBar.getRight() - 40, presetBar.getBottom() + 4, 40, 12, Justification::right, false);
 
     for (auto r : { topPanel, noisePanel, lfoPanel })
     {
@@ -1171,13 +1370,22 @@ void BassEditor::paint (Graphics& g)
     const int x0 = lfoPanel.getX(), y0 = lfoPanel.getY();
     g.setColour (C::dim);
     g.setFont (font (10.0f, 0.14f));
-    g.drawText ("SHAPE",    x0 + 306, y0 + 36, 90, 14, Justification::left, false);
-    g.drawText ("MODE",     x0 + 306, y0 + 90, 90, 14, Justification::left, false);
-    g.drawText ("DIVISION", x0 + 404, y0 + 36, 90, 14, Justification::left, false);
-    g.drawText ("TEMPO",    x0 + 404, y0 + 90, 90, 14, Justification::left, false);
-    g.setColour (C::faint);
-    g.setFont (font (9.5f, 0.1f));
-    g.drawFittedText ("DRAG A TAB\nONTO A KNOB", x0 + 12, y0 + 168, 84, 26, Justification::centred, 2);
+    if (selectedLfo < kNumLfos)
+    {
+        g.drawText ("SHAPE",    x0 + 306, y0 + 36, 90, 14, Justification::left, false);
+        g.drawText ("MODE",     x0 + 306, y0 + 90, 90, 14, Justification::left, false);
+        g.drawText ("DIVISION", x0 + 404, y0 + 36, 90, 14, Justification::left, false);
+        g.drawText ("TEMPO",    x0 + 404, y0 + 90, 90, 14, Justification::left, false);
+    }
+    else
+    {
+        const bool on = proc.apvts.getRawParameterValue (ParamID::ampOn)->load() > 0.5f;
+        g.setColour (on ? C::dim : C::accent);
+        g.setFont (font (10.0f, 0.06f));
+        g.drawFittedText (on ? "VOLUME FOLLOWS THE ADSR WHILE THE KEY IS HELD. LENGTH STILL SETS THE DROP."
+                             : "ADSR IS OFF: THE 808 USES ITS LENGTH TAIL. CLICK THE LIGHT ON THE TAB TO SWITCH IT ON.",
+                          x0 + 306, y0 + 150, lfoPanel.getWidth() - 318, 40, Justification::centredLeft, 3);
+    }
 }
 
 void BassEditor::resized()
@@ -1192,14 +1400,14 @@ void BassEditor::resized()
     screen.setBounds (topPanel.getX() + 40, topPanel.getY() + 14, topPanel.getWidth() - 80, 192);
 
     const int top = 318, x0 = 30;
-    const float unit = (W - 2 * x0) / 7.5f;
+    const float unit = (W - 2 * x0) / 8.5f;
     float x = (float) x0;
     for (auto& k : mainKnobs)
     {
-        const bool big = k.get() == mainKnobs[3].get();
+        const bool big = k.get() == powerKnob;
         const float w = big ? unit * 1.5f : unit;
         k->setBounds ((int) x, big ? top : top + 20, (int) w, big ? 162 : 112);
-        if (k.get() == mainKnobs[5].get())
+        if (k.get() == driveKnob)
             drivePicker.setBounds ((int) x + 2, top + 20 + 112, (int) w - 4, 24);
         x += w;
     }
@@ -1213,8 +1421,14 @@ void BassEditor::resized()
         noiseKnobs[(size_t) i]->setBounds (noisePanel.getX() + 10 + i * nkw, noisePanel.getY() + 86, nkw, 100);
 
     const int lx = lfoPanel.getX(), ly = lfoPanel.getY() + 22;
-    for (int l = 0; l < kNumLfos; ++l) lfoTabs[(size_t) l]->setBounds (lx + 12, ly + 16 + l * 40, 84, 32);
+    ampTab.setBounds (lx + 12, ly + 10, 84, 30);
+    for (int l = 0; l < kNumLfos; ++l) lfoTabs[(size_t) l]->setBounds (lx + 12, ly + 46 + l * 36, 84, 30);
     lfoEditor.setBounds (lx + 104, ly + 16, 192, 158);
+    ampEditor.setBounds (lfoEditor.getBounds());
+    {
+        const int aw = (lfoPanel.getWidth() - 306 - 14) / 4;
+        for (int i = 0; i < 4; ++i) ampKnobs[(size_t) i]->setBounds (lx + 300 + i * aw, ly + 14, aw, 100);
+    }
     for (auto& cp : lfoControls)
     {
         auto& c = *cp;

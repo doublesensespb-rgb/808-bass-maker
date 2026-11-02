@@ -221,6 +221,38 @@ private:
     juce::Point<float> dragStart;
 };
 
+// ADSR amp tab (as in GRAIN FORM): click the light = envelope on/off (off = the 808 LENGTH tail), click = select
+class AmpTab final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    AmpTab();
+    void paint (juce::Graphics&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    std::function<void()> onSelect;
+    bool selected = false;
+    juce::RangedAudioParameter* param = nullptr;
+};
+
+// ADSR drawn as a curve (GRAIN FORM): drag the attack peak, the decay/sustain corner and the release end
+class AmpEditor final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit AmpEditor (BassProcessor&);
+    void paint (juce::Graphics&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+private:
+    struct Geo { juce::Point<float> p0, p1, p2, p3, p4; juce::Rectangle<float> a; float maxW = 0, plateau = 0; };
+    Geo geometry() const;
+    float value (const char* id) const;
+    void setValue (const char* id, float v);
+    BassProcessor& proc;
+    int dragging = -1, hover = -1;
+};
+
 class BassEditor final : public juce::AudioProcessorEditor, public juce::DragAndDropContainer, private juce::Timer
 {
 public:
@@ -260,7 +292,12 @@ private:
     std::array<std::unique_ptr<LfoTab>, kNumLfos> lfoTabs;
     std::array<std::unique_ptr<LfoControls>, kNumLfos> lfoControls;
     LfoEditor lfoEditor;
-    int selectedLfo = 0;
+    AmpTab ampTab;
+    AmpEditor ampEditor;
+    std::vector<std::unique_ptr<Knob>> ampKnobs;
+    Knob* powerKnob = nullptr;
+    Knob* driveKnob = nullptr;
+    int selectedLfo = 0;      // 0..2 = LFO, 3 = ADSR
 
     juce::Rectangle<int> noisePanel, lfoPanel, topPanel;
     juce::Random rnd;

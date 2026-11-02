@@ -47,9 +47,9 @@ int main()
                      freqAt (x, sr, 0.0, 0.010), freqAt (x, sr, 0.3, 0.6));
     }
 
-    // pitch settles near the note (C1 = 32.7 Hz) after the envelopes, with DROP off
+    // pitch settles two octaves below the note (C3 -> C1 = 32.7 Hz) after the envelopes, with DROP off
     bass::Params p; p.drop = 0; p.drive = 0; p.noise = 0; p.fm = 0;
-    auto x = renderNote (p, 24, 2.0, sr);
+    auto x = renderNote (p, 48, 2.0, sr);
     const double f = freqAt (x, sr, 0.6, 1.1);
     CHECK (std::fabs (f - 32.70) < 1.0, "settled pitch %.2f Hz", f);
     // click is much higher than the note
@@ -66,8 +66,8 @@ int main()
         g.punch = 0; g.drop = 0; g.drive = 0;
         e.setParams (g);
         std::vector<float> o ((size_t) sr);
-        e.noteOn (36, 1); e.render (o.data(), 24000);
-        e.noteOn (48, 1); e.render (o.data() + 24000, 24000);
+        e.noteOn (60, 1); e.render (o.data(), 24000);
+        e.noteOn (72, 1); e.render (o.data() + 24000, 24000);
         const double fa = freqAt (o, sr, 0.30, 0.48), fb = freqAt (o, sr, 0.52, 0.56), fc = freqAt (o, sr, 0.85, 0.99);
         std::printf ("glide %.1f -> %.1f -> %.1f Hz\n", fa, fb, fc);
         CHECK (fb > fa * 1.05 && fb < fc * 0.97, "glide not smooth");
@@ -93,11 +93,29 @@ int main()
     // FM adds energy above the fundamental, odd harmonics: compare 3rd harmonic level vs 2nd with drive off
     {
         bass::Params q; q.click = 0; q.punch = 0; q.drop = 0; q.drive = 0; q.fm = 0.8f; q.power = 0.3f;
-        auto z = renderNote (q, 33, 1.0, sr);   // A1 = 55 Hz
+        auto z = renderNote (q, 57, 1.0, sr);   // A3 played -> A1 = 55 Hz
         auto mag = [&] (double hz) { double re = 0, im = 0; for (size_t i = (size_t) (0.2 * sr); i < (size_t) (0.6 * sr); ++i) { const double w = 2 * bass::kPi * hz * i / sr; re += z[i] * std::cos (w); im += z[i] * std::sin (w); } return std::sqrt (re * re + im * im); };
         const double h2 = mag (110), h3 = mag (165), h5 = mag (275);
         std::printf ("fm harmonics: h2 %.1f  h3 %.1f  h5 %.1f\n", h2, h3, h5);
         CHECK (h3 > h2 * 4 && h5 > h2 * 2, "fm should be odd harmonics");
+    }
+
+    // global PITCH +12 = one octave up
+    {
+        bass::Params q; q.drop = 0; q.drive = 0; q.pitch = 12.0f;
+        auto z = renderNote (q, 48, 2.0, sr);
+        const double fz = freqAt (z, sr, 0.6, 1.1);
+        CHECK (std::fabs (fz - 65.41) < 1.5, "pitch +12: %.2f Hz", fz);
+    }
+    // ADSR: sustains while held, then releases to silence
+    {
+        bass::Params q; q.adsrOn = true; q.attackMs = 2; q.decayMs = 100; q.sustain = 0.6f; q.releaseMs = 80; q.drive = 0; q.length = 0.0f;
+        auto z = renderNote (q, 48, 2.0, sr, 0.3);   // LENGTH at minimum would already be silent at 1 s without ADSR
+        float held = 0, after = 0;
+        for (size_t i = (size_t) (0.45 * sr); i < (size_t) (0.55 * sr); ++i) held = std::fmax (held, std::fabs (z[i]));
+        for (size_t i = (size_t) (0.95 * sr); i < z.size(); ++i) after = std::fmax (after, std::fabs (z[i]));
+        std::printf ("adsr: held %.3f  after release %.4f\n", held, after);
+        CHECK (held > 0.2f && after < 0.01f, "adsr sustain/release");
     }
 
     std::printf (fails ? "%d FAILED\n" : "all ok\n", fails);
