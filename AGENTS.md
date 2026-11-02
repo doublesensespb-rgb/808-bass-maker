@@ -1,7 +1,7 @@
 # 808 BASS MAKER (repo: 808-bass-maker) — guide for AI agents and developers
 
-Read this whole file before changing anything. Current version: **0.12** (`project(BassMaker VERSION 0.1.2)` in
-CMakeLists.txt, "v0.12" text in `BassEditor::paint`). Owner's guide in Russian: `README-RU.md`.
+Read this whole file before changing anything. Current version: **0.13** (`project(BassMaker VERSION 0.1.3)` in
+CMakeLists.txt, "v0.13" text in `BassEditor::paint`). Owner's guide in Russian: `README-RU.md`.
 
 ## 1. Product
 
@@ -23,6 +23,9 @@ sine (OCT -2)
  -> clean sub below 90 Hz (LR4 split, mono sine) + dirt above it
  -> high cut 9 kHz -> DC block -> output clipper (POWER pushes into it)
 Mono, last-note priority, LEGATO off (envelopes retrigger on every note), no glide, pitch bend +/-2.
+Since 0.13 it plays TWO OCTAVES below the played key (`kBaseOctaveShift`); global PITCH knob -24..+24 st on top.
+ADSR amp (as in GRAIN FORM, same param IDs ampOn/ampA/ampD/ampS/ampR): off (default) = the LENGTH tail; on = volume
+follows the ADSR while the key is held (LENGTH still sets the DROP time). Old states without `pitch` get PITCH +24.
 Everything runs at 4x oversampling, decimated by two half-band FIR stages.
 ```
 
@@ -72,15 +75,16 @@ RANDOM (big copper button): animates every knob to random but always usable valu
 |---|---|
 | `Source/BassEngine.h` | Header-only DSP, no JUCE: `Params`, mapping functions shared with the screen (`pitchShape`, `ampShape`, `tailSeconds`, `driveGain`, `fmPart`...), `driveShape` (5 drive types), `NoiseGen` (8 noises), `Engine` (mono voice, 4x oversampling, sub split, clipper, viz atomics, `publishViz`), `factoryPresets()` |
 | `Source/PluginProcessor.*` | Parameters, MIDI, mod matrix + 3 LFOs (ported from GRAIN FORM: `computeModulated`, `advanceLfos`, LFO tables), factory + user presets, `randomTargets`, state save/load (mods + LFO shapes) |
-| `Source/PluginEditor.*` | UI 900x720: `Colours808`, `FlatLook`, `Knob` (+ `ModChip`, LFO drop target), `WaveScreen` (wave, glow, dust, sand), `Meter`, `PresetBar`, `ChoicePicker` (noise type, drive type), `LfoTab`, `LfoEditor`, `BassEditor` |
+| `Source/PluginEditor.*` | UI 900x720: `Colours808`, `FlatLook`, `Knob` (+ `ModChip`, LFO drop target), `WaveScreen` (wave, glow, dust, sand), `Meter`, `PresetBar`, `ChoicePicker` (noise type, drive type), `AmpTab` + `AmpEditor` (ADSR from GRAIN FORM), `LfoTab`, `LfoEditor`, `BassEditor` |
 | `tools/Snapshot.cpp` | Renders the editor to PNG while notes play: `ui-idle`, `ui-impact`, `ui-tail`, `ui-sand`, `ui-gut` (`frames` mode = animation strip) |
 | `test/engine_test.cpp` | Plain C++ engine tests (presets, pitch, release, noises, drive types, FM odd harmonics) |
 | `.github/workflows/build.yml` | CI: Windows + macOS builds, publishes zips + PNG previews to the `builds` branch. Manual start only |
 | `tools/build-windows.bat` | One-click local Windows build (Visual Studio 2022 + CMake), result in `out/` |
 | `README-RU.md` | Owner's guide in Russian |
 
-Main row: CLICK PUNCH DROP POWER LENGTH DRIVE (+ drive type picker) FM. Bottom: NOISE panel (type, AMOUNT, TONE, TAIL)
-and MODULATION panel (LFO tabs, shape editor, SHAPE, MODE, DIVISION, SYNC, REMOVE LINKS, RATE, RISE).
+Main row: PITCH CLICK PUNCH DROP POWER LENGTH DRIVE (+ drive type picker) FM. Bottom: NOISE panel (type, AMOUNT, TONE, TAIL)
+and MODULATION panel: tabs ADSR amp / LFO 1-3, a WIDE rectangular screen (top = ADSR tab, bottom = LFO 3 tab; owner's
+request), LFO controls (SHAPE, MODE, DIVISION, SYNC, REMOVE LINKS, RATE, RISE) or ADSR knobs (ATTACK DECAY SUSTAIN RELEASE).
 
 Screen (`WaveScreen`): the wave is drawn from the same mapping functions as the DSP (modulated values), on a stretched
 time axis (t = u^2) with softened pitch so CLICK/PUNCH are visible and the sine stays readable. Dust follows the knobs:
@@ -127,6 +131,7 @@ The CXXFLAGS switch off optional X11 extensions whose headers may be missing. Re
   GRAIN FORM, preset SAVE + user presets, DICE -> big RANDOM, GLIDE knob removed, 9 factory presets.
 - **0.12**: GRAIN FORM look (graphite, grey knobs, copper), drive types ASYM / TUBE / HARD / FOLD / RECTIFY (`distType`),
   DRIVE heats the screen, NOISE sand grains + sand wave, fine dense dust driven by the knobs, attack arc removed.
+- **0.13**: plays two octaves lower by default, global PITCH knob (LFO-able), ADSR amp from GRAIN FORM, wide LFO/ADSR screen.
 
 ## 7. Ideas not started / release to-do
 
