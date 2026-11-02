@@ -1385,7 +1385,7 @@ void BassEditor::paint (Graphics& g)
         g.setFont (font (10.0f, 0.06f));
         g.drawFittedText (on ? "VOLUME FOLLOWS THE ADSR WHILE THE KEY IS HELD. LENGTH STILL SETS THE DROP."
                              : "ADSR IS OFF: THE 808 USES ITS LENGTH TAIL. CLICK THE LIGHT ON THE TAB TO SWITCH IT ON.",
-                          x0 + kCtrlX, y0 + 150, lfoPanel.getWidth() - kCtrlX - 12, 40, Justification::centredLeft, 3);
+                          x0 + kCtrlX, y0 + 140, lfoPanel.getWidth() - kCtrlX - 12, 30, Justification::centredLeft, 3);
     }
 }
 
@@ -1424,7 +1424,7 @@ void BassEditor::resized()
     const int lx = lfoPanel.getX(), ly = lfoPanel.getY() + 22;
     ampTab.setBounds (lx + 12, ly + 10, 84, 30);
     for (int l = 0; l < kNumLfos; ++l) lfoTabs[(size_t) l]->setBounds (lx + 12, ly + 46 + l * 36, 84, 30);
-    lfoEditor.setBounds (lx + 104, ly + 18, 262, 150);   // wide rectangle, not a square
+    lfoEditor.setBounds (lx + 104, ly + 10, 262, 138);   // wide rectangle: top = ADSR tab, bottom = LFO 3 tab
     ampEditor.setBounds (lfoEditor.getBounds());
     const int c0 = lx + kCtrlX;
     {
@@ -1438,7 +1438,7 @@ void BassEditor::resized()
         c.mode.setBounds (c0, ly + 84, 80, 28);
         c.div.setBounds (c0 + 86, ly + 30, 80, 28);
         c.sync.setBounds (c0 + 86, ly + 84, 80, 28);
-        c.remove.setBounds (c0, ly + 140, 166, 28);
+        c.remove.setBounds (c0, ly + 120, 166, 28);   // bottom in line with LFO 3
         c.rate->setBounds (c0 + 170, ly + 4, lfoPanel.getRight() - 6 - (c0 + 170), 86);
         c.rise->setBounds (c0 + 170, ly + 92, lfoPanel.getRight() - 6 - (c0 + 170), 86);
     }
